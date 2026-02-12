@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Keihi - 経費管理</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#6366f1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+JP:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- トースト通知 -->
+  <div id="toast-container"></div>
+
+  <!-- アプリシェル -->
+  <div class="app">
+    <!-- サイドバー（デスクトップ） -->
+    <nav class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <div class="logo-icon">K</div>
+          <span class="logo-text">Keihi</span>
+        </div>
+      </div>
+
+      <ul class="nav-menu">
+        <li>
+          <a href="#" class="nav-item active" data-view="dashboard">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            <span>ダッシュボード</span>
+          </a>
+        </li>
+        <li>
+          <a href="#" class="nav-item" data-view="income">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+            <span>収入入力</span>
+          </a>
+        </li>
+        <li>
+          <a href="#" class="nav-item" data-view="expense">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+            <span>経費入力</span>
+          </a>
+        </li>
+        <li>
+          <a href="#" class="nav-item" data-view="history">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
+            <span>取引履歴</span>
+          </a>
+        </li>
+        <li>
+          <a href="#" class="nav-item" data-view="report">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
+            <span>レポート</span>
+          </a>
+        </li>
+        <li>
+          <a href="#" class="nav-item" data-view="ai-export">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 0-4 4c0 1.5.8 2.8 2 3.4V11h4V9.4c1.2-.7 2-2 2-3.4a4 4 0 0 0-4-4Z"/><path d="M10 11v2a2 2 0 1 0 4 0v-2"/><line x1="12" y1="15" x2="12" y2="19"/><line x1="8" y1="19" x2="16" y2="19"/><line x1="8" y1="22" x2="16" y2="22"/></svg>
+            <span>AI出力</span>
+          </a>
+        </li>
+      </ul>
+
+      <div class="sidebar-footer">
+        <a href="#" class="nav-item" id="btn-csv-import">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <span>CSV取込</span>
+        </a>
+        <a href="#" class="nav-item" id="btn-backup" onclick="window.location.href=(location.pathname.startsWith('/tax')?'/tax':'')+'/api/export'; return false;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span>バックアップ</span>
+        </a>
+      </div>
+    </nav>
+
+    <!-- メインコンテンツ -->
+    <main class="main-content">
+      <!-- モバイルヘッダー -->
+      <header class="mobile-header">
+        <button class="menu-toggle" id="menu-toggle">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <div class="mobile-logo">
+          <div class="logo-icon small">K</div>
+          <span>Keihi</span>
+        </div>
+        <div class="mobile-actions">
+          <button class="btn-icon" onclick="App.navigate('income')" title="収入追加">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- ダッシュボードビュー -->
+      <section class="view active" id="view-dashboard">
+        <div class="view-header">
+          <div>
+            <h1 class="view-title">ダッシュボード</h1>
+            <p class="view-subtitle" id="dashboard-date"></p>
+          </div>
+          <div class="view-actions">
+            <button class="btn btn-primary" onclick="App.navigate('expense')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              経費を追加
+            </button>
+          </div>
+        </div>
+
+        <!-- サマリーカード -->
+        <div class="stats-grid">
+          <div class="stat-card stat-income">
+            <div class="stat-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-label">今月の収入</span>
+              <span class="stat-value" id="stat-month-income">¥0</span>
+            </div>
+          </div>
+          <div class="stat-card stat-expense">
+            <div class="stat-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-label">今月の経費</span>
+              <span class="stat-value" id="stat-month-expense">¥0</span>
+            </div>
+          </div>
+          <div class="stat-card stat-year-income">
+            <div class="stat-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.2 7.8l-7.7 7.7-4-4-5.7 5.7"/><path d="M15 7h6v6"/></svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-label">年間収入</span>
+              <span class="stat-value" id="stat-year-income">¥0</span>
+            </div>
+          </div>
+          <div class="stat-card stat-profit">
+            <div class="stat-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><line x1="12" y1="18" x2="12" y2="6"/></svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-label">年間利益</span>
+              <span class="stat-value" id="stat-year-profit">¥0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- チャートエリア -->
+        <div class="charts-grid">
+          <div class="chart-card">
+            <h3 class="chart-title">月別推移</h3>
+            <div class="chart-container">
+              <canvas id="chart-monthly"></canvas>
+            </div>
+          </div>
+          <div class="chart-card">
+            <h3 class="chart-title">経費内訳</h3>
+            <div class="chart-container chart-container-doughnut">
+              <canvas id="chart-category"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- 最近の取引 -->
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">最近の取引</h3>
+            <a href="#" class="link" onclick="App.navigate('history'); return false;">すべて見る</a>
+          </div>
+          <div class="transactions-list" id="recent-transactions"></div>
+        </div>
+      </section>
+
+      <!-- 収入入力ビュー -->
+      <section class="view" id="view-income">
+        <div class="view-header">
+          <div>
+            <h1 class="view-title">収入を記録</h1>
+            <p class="view-subtitle">新しい収入を入力してください</p>
+          </div>
+        </div>
+
+        <div class="form-card">
+          <form id="form-income" class="form">
+            <div class="form-group">
+              <label class="form-label" for="income-date">日付</label>
+              <input type="date" id="income-date" class="form-input" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="income-amount">金額（円）</label>
+              <div class="input-with-prefix">
+                <span class="input-prefix">¥</span>
+                <input type="number" id="income-amount" class="form-input" placeholder="0" inputmode="numeric" required>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="income-type">種類</label>
+              <select id="income-type" class="form-select">
+                <option value="振込">振込</option>
+                <option value="現金">現金</option>
+                <option value="その他">その他</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="income-description">摘要</label>
+              <input type="text" id="income-description" class="form-input" placeholder="例: ○○株式会社 報酬">
+            </div>
+            <button type="submit" class="btn btn-primary btn-lg btn-full">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+              収入を保存
+            </button>
+          </form>
+        </div>
+      </section>
+
+      <!-- 経費入力ビュー -->
+      <section class="view" id="view-expense">
+        <div class="view-header">
+          <div>
+            <h1 class="view-title">経費を記録</h1>
+            <p class="view-subtitle">新しい経費を入力してください</p>
+          </div>
+        </div>
+
+        <div class="form-card">
+          <form id="form-expense" class="form">
+            <div class="form-group">
+              <label class="form-label" for="expense-date">日付</label>
+              <input type="date" id="expense-date" class="form-input" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="expense-amount">金額（円）</label>
+              <div class="input-with-prefix">
+                <span class="input-prefix">¥</span>
+                <input type="number" id="expense-amount" class="form-input" placeholder="0" inputmode="numeric" required>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="expense-category">勘定科目</label>
+              <div class="category-grid" id="category-grid">
+                <label class="category-chip">
+                  <input type="radio" name="category" value="outsourcing">
+                  <span class="chip-content"><span class="chip-emoji">👨‍💻</span>外注工賃</span>
+                </label>
+                <label class="category-chip">
+                  <input type="radio" name="category" value="travel">
+                  <span class="chip-content"><span class="chip-emoji">🚃</span>旅費交通費</span>
+                </label>
+                <label class="category-chip">
+                  <input type="radio" name="category" value="communication">
+                  <span class="chip-content"><span class="chip-emoji">📱</span>通信費</span>
+                </label>
+                <label class="category-chip">
+                  <input type="radio" name="category" value="supplies">
+                  <span class="chip-content"><span class="chip-emoji">🖊️</span>消耗品費</span>
+                </label>
+                <label class="category-chip">
+                  <input type="radio" name="category" value="advertising">
+                  <span class="chip-content"><span class="chip-emoji">📢</span>広告宣伝費</span>
+                </label>
+                <label class="category-chip">
+                  <input type="radio" name="category" value="entertainment">
+                  <span class="chip-content"><span class="chip-emoji">🍽️</span>接待交際費</span>
+                </label>
+                <label class="category-chip">
+                  <input type="radio" name="category" value="depreciation">
+                  <span class="chip-content"><span class="chip-emoji">💻</span>減価償却費</span>
+                </label>
+                <label class="category-chip">
+                  <input type="radio" name="category" value="home_office">
+                  <span class="chip-content"><span class="chip-emoji">🏠</span>家事按分</span>
+                </label>
+                <label class="category-chip">
+                  <input type="radio" name="category" value="fees">
+                  <span class="chip-content"><span class="chip-emoji">🏦</span>支払手数料</span>
+                </label>
+                <label class="category-chip">
+                  <input type="radio" name="category" value="misc" checked>
+                  <span class="chip-content"><span class="chip-emoji">📦</span>雑費</span>
+                </label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="expense-description">摘要</label>
+              <input type="text" id="expense-description" class="form-input" placeholder="例: 電車代 渋谷→新宿">
+            </div>
+            <div class="form-group">
+              <label class="form-label">レシート画像</label>
+              <div class="file-upload-area" id="receipt-upload-area">
+                <input type="file" id="expense-receipt" accept="image/*" capture="environment" class="file-input">
+                <div class="file-upload-content">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="upload-icon"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                  <span class="upload-text">タップして撮影 / 画像を選択</span>
+                  <span class="upload-hint">JPG, PNG 10MB以下</span>
+                </div>
+                <div class="file-preview" id="receipt-preview" style="display:none;">
+                  <img id="receipt-preview-img" alt="レシート">
+                  <button type="button" class="btn-remove-file" id="btn-remove-receipt">&times;</button>
+                </div>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary btn-lg btn-full">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+              経費を保存
+            </button>
+          </form>
+        </div>
+      </section>
+
+      <!-- 取引履歴ビュー -->
+      <section class="view" id="view-history">
+        <div class="view-header">
+          <div>
+            <h1 class="view-title">取引履歴</h1>
+            <p class="view-subtitle">全ての収入・経費の記録</p>
+          </div>
+        </div>
+
+        <div class="filter-bar">
+          <div class="filter-group">
+            <select id="history-year" class="form-select filter-select"></select>
+            <select id="history-month" class="form-select filter-select">
+              <option value="">全月</option>
+              <option value="1">1月</option><option value="2">2月</option>
+              <option value="3">3月</option><option value="4">4月</option>
+              <option value="5">5月</option><option value="6">6月</option>
+              <option value="7">7月</option><option value="8">8月</option>
+              <option value="9">9月</option><option value="10">10月</option>
+              <option value="11">11月</option><option value="12">12月</option>
+            </select>
+            <select id="history-type" class="form-select filter-select">
+              <option value="">全種別</option>
+              <option value="income">収入</option>
+              <option value="expense">経費</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="transactions-list" id="history-transactions"></div>
+          <div class="empty-state" id="history-empty" style="display:none;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="empty-icon"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+            <p>取引データがありません</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- レポートビュー -->
+      <section class="view" id="view-report">
+        <div class="view-header">
+          <div>
+            <h1 class="view-title">年間レポート</h1>
+            <p class="view-subtitle">確定申告に必要な集計データ</p>
+          </div>
+          <div class="view-actions">
+            <select id="report-year" class="form-select"></select>
+          </div>
+        </div>
+
+        <!-- レポートサマリー -->
+        <div class="report-summary" id="report-summary">
+          <div class="report-row report-income">
+            <span class="report-label">総収入</span>
+            <span class="report-value" id="report-total-income">¥0</span>
+          </div>
+          <div class="report-divider"></div>
+          <div class="report-row report-expense">
+            <span class="report-label">総経費</span>
+            <span class="report-value" id="report-total-expense">¥0</span>
+          </div>
+          <div class="report-divider"></div>
+          <div class="report-row report-deduction">
+            <span class="report-label">青色申告特別控除</span>
+            <span class="report-value">¥650,000</span>
+          </div>
+          <div class="report-divider thick"></div>
+          <div class="report-row report-profit">
+            <span class="report-label">課税所得（概算）</span>
+            <span class="report-value" id="report-taxable">¥0</span>
+          </div>
+        </div>
+
+        <!-- 経費内訳 -->
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">経費内訳</h3>
+          </div>
+          <div id="report-breakdown"></div>
+        </div>
+
+        <!-- 月別推移チャート -->
+        <div class="chart-card">
+          <h3 class="chart-title">月別収支推移</h3>
+          <div class="chart-container">
+            <canvas id="chart-report-monthly"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <!-- AI出力ビュー -->
+      <section class="view" id="view-ai-export">
+        <div class="view-header">
+          <div>
+            <h1 class="view-title">AI相談用データ</h1>
+            <p class="view-subtitle">Grok・ChatGPT等に貼り付けて相談できます</p>
+          </div>
+          <div class="view-actions">
+            <select id="ai-year" class="form-select"></select>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="ai-actions">
+            <button class="btn btn-primary" id="btn-generate-ai">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 0-4 4c0 1.5.8 2.8 2 3.4V11h4V9.4c1.2-.7 2-2 2-3.4a4 4 0 0 0-4-4Z"/><path d="M10 11v2a2 2 0 1 0 4 0v-2"/><line x1="12" y1="15" x2="12" y2="19"/><line x1="8" y1="19" x2="16" y2="19"/></svg>
+              データを生成
+            </button>
+            <button class="btn btn-outline" id="btn-copy-ai" style="display:none;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              クリップボードにコピー
+            </button>
+          </div>
+          <textarea id="ai-output" class="ai-textarea" readonly placeholder="「データを生成」ボタンを押してください..."></textarea>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- モバイルナビゲーション -->
+  <nav class="mobile-nav">
+    <a href="#" class="mobile-nav-item active" data-view="dashboard">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <span>ホーム</span>
+    </a>
+    <a href="#" class="mobile-nav-item" data-view="income">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+      <span>収入</span>
+    </a>
+    <a href="#" class="mobile-nav-item mobile-nav-center" data-view="expense">
+      <div class="mobile-nav-center-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </div>
+      <span>経費</span>
+    </a>
+    <a href="#" class="mobile-nav-item" data-view="history">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
+      <span>履歴</span>
+    </a>
+    <a href="#" class="mobile-nav-item" data-view="report">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
+      <span>レポート</span>
+    </a>
+  </nav>
+
+  <!-- 編集モーダル -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal" id="edit-modal">
+      <div class="modal-header">
+        <h3 class="modal-title" id="modal-title">取引を編集</h3>
+        <button class="btn-close" id="modal-close">&times;</button>
+      </div>
+      <form id="form-edit" class="form">
+        <input type="hidden" id="edit-id">
+        <input type="hidden" id="edit-kind">
+        <div class="form-group">
+          <label class="form-label">日付</label>
+          <input type="date" id="edit-date" class="form-input" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">金額（円）</label>
+          <div class="input-with-prefix">
+            <span class="input-prefix">¥</span>
+            <input type="number" id="edit-amount" class="form-input" required>
+          </div>
+        </div>
+        <div class="form-group" id="edit-category-group" style="display:none;">
+          <label class="form-label">科目</label>
+          <select id="edit-category" class="form-select">
+            <option value="outsourcing">外注工賃</option>
+            <option value="travel">旅費交通費</option>
+            <option value="communication">通信費</option>
+            <option value="supplies">消耗品費</option>
+            <option value="advertising">広告宣伝費</option>
+            <option value="entertainment">接待交際費</option>
+            <option value="depreciation">減価償却費</option>
+            <option value="home_office">家事按分</option>
+            <option value="fees">支払手数料</option>
+            <option value="misc">雑費</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">摘要</label>
+          <input type="text" id="edit-description" class="form-input">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-danger" id="btn-delete-transaction">削除</button>
+          <button type="submit" class="btn btn-primary">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- CSV インポートモーダル -->
+  <div class="modal-overlay" id="csv-modal-overlay">
+    <div class="modal" id="csv-modal">
+      <div class="modal-header">
+        <h3 class="modal-title">CSVファイルを取り込む</h3>
+        <button class="btn-close" id="csv-modal-close">&times;</button>
+      </div>
+      <div class="form">
+        <p class="text-muted" style="margin-bottom: 1rem;">クレジットカード明細のCSVファイルをアップロードしてください。</p>
+        <div class="file-upload-area" id="csv-upload-area">
+          <input type="file" id="csv-file" accept=".csv" class="file-input">
+          <div class="file-upload-content">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="upload-icon"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+            <span class="upload-text">CSVファイルを選択</span>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-full" id="btn-import-csv" style="margin-top:1rem;" disabled>取り込む</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- サイドバーオーバーレイ（モバイル） -->
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "tax-keihi-manager",
+  "version": "1.0.0",
+  "description": "個人用経費管理・確定申告支援ツール",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "better-sqlite3": "^11.0.0",
+    "multer": "^1.4.5-lts.1",
+    "papaparse": "^5.4.1"
+  }
+}
