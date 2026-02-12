@@ -1318,6 +1318,243 @@ img { max-width: 100%; display: block; }
   }
 }
 
+/* === OCR Loading Overlay === */
+.ocr-loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  border-radius: var(--radius-md);
+}
+
+.ocr-loading-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.ocr-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--gray-200);
+  border-top-color: var(--primary-500);
+  border-radius: 50%;
+  animation: ocr-spin 0.8s linear infinite;
+}
+
+@keyframes ocr-spin {
+  to { transform: rotate(360deg); }
+}
+
+.ocr-loading-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gray-600);
+}
+
+.ocr-progress-bar {
+  width: 160px;
+  height: 4px;
+  background: var(--gray-200);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.ocr-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary-400), var(--primary-500));
+  border-radius: 2px;
+  width: 0%;
+  transition: width 0.3s ease;
+}
+
+/* OCR Result Banner */
+.ocr-result-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, var(--income-bg), #d1fae5);
+  border: 1px solid var(--income-color);
+  border-radius: var(--radius-md);
+  margin-top: 8px;
+  animation: banner-in 0.4s var(--ease-spring);
+}
+
+@keyframes banner-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.ocr-result-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.ocr-result-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--gray-700);
+  flex: 1;
+}
+
+.ocr-result-close {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 16px;
+  color: var(--gray-400);
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+
+.ocr-result-close:hover {
+  background: rgba(0,0,0,0.1);
+  color: var(--gray-700);
+}
+
+/* === CSV Preview Modal === */
+.csv-modal-wide {
+  max-width: 800px !important;
+}
+
+.csv-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  font-size: 14px;
+  color: var(--gray-600);
+  font-weight: 500;
+}
+
+.csv-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.csv-preview-count {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--gray-700);
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.csv-preview-table-wrap {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+}
+
+.csv-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.csv-preview-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.csv-preview-table th {
+  background: var(--gray-100);
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--gray-600);
+  font-size: 12px;
+  border-bottom: 2px solid var(--gray-200);
+  white-space: nowrap;
+}
+
+.csv-th-check {
+  width: 40px;
+  text-align: center !important;
+}
+
+.csv-preview-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--gray-100);
+  vertical-align: middle;
+}
+
+.csv-preview-table tr:hover td {
+  background: var(--gray-50);
+}
+
+.csv-preview-table tr.csv-row-unchecked td {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+
+.csv-preview-table .csv-amount {
+  font-weight: 600;
+  color: var(--expense-color);
+  white-space: nowrap;
+  text-align: right;
+}
+
+.csv-preview-table .csv-date {
+  white-space: nowrap;
+}
+
+.csv-preview-table .csv-desc {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.csv-category-select {
+  padding: 6px 28px 6px 8px;
+  font-size: 12px;
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+  background: #fff;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  min-width: 110px;
+}
+
+.csv-category-select:focus {
+  outline: none;
+  border-color: var(--primary-400);
+}
+
+.csv-preview-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.csv-selected-count {
+  font-size: 13px;
+  color: var(--gray-500);
+  font-weight: 500;
+}
+
 /* === Animations === */
 @keyframes pulse-soft {
   0%, 100% { opacity: 1; }

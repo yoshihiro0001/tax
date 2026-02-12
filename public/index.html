@@ -12,6 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+JP:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -293,18 +294,34 @@
               <input type="text" id="expense-description" class="form-input" placeholder="例: 電車代 渋谷→新宿">
             </div>
             <div class="form-group">
-              <label class="form-label">レシート画像</label>
+              <label class="form-label">レシート画像（自動読取対応）</label>
               <div class="file-upload-area" id="receipt-upload-area">
                 <input type="file" id="expense-receipt" accept="image/*" capture="environment" class="file-input">
                 <div class="file-upload-content">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="upload-icon"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
                   <span class="upload-text">タップして撮影 / 画像を選択</span>
-                  <span class="upload-hint">JPG, PNG 10MB以下</span>
+                  <span class="upload-hint">OCRで日付・金額・科目を自動入力</span>
                 </div>
                 <div class="file-preview" id="receipt-preview" style="display:none;">
                   <img id="receipt-preview-img" alt="レシート">
                   <button type="button" class="btn-remove-file" id="btn-remove-receipt">&times;</button>
                 </div>
+                <!-- OCR読取中オーバーレイ -->
+                <div class="ocr-loading-overlay" id="ocr-loading" style="display:none;">
+                  <div class="ocr-loading-content">
+                    <div class="ocr-spinner"></div>
+                    <span class="ocr-loading-text" id="ocr-loading-text">レシートを読み取り中...</span>
+                    <div class="ocr-progress-bar">
+                      <div class="ocr-progress-fill" id="ocr-progress-fill"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <!-- OCR結果バナー -->
+              <div class="ocr-result-banner" id="ocr-result-banner" style="display:none;">
+                <div class="ocr-result-icon">✨</div>
+                <div class="ocr-result-text" id="ocr-result-text">レシートから自動入力しました</div>
+                <button type="button" class="ocr-result-close" id="ocr-result-close">&times;</button>
               </div>
             </div>
             <button type="submit" class="btn btn-primary btn-lg btn-full">
@@ -508,23 +525,55 @@
     </div>
   </div>
 
-  <!-- CSV インポートモーダル -->
+  <!-- CSV インポートモーダル（プレビュー機能付き） -->
   <div class="modal-overlay" id="csv-modal-overlay">
-    <div class="modal" id="csv-modal">
+    <div class="modal csv-modal-wide" id="csv-modal">
       <div class="modal-header">
-        <h3 class="modal-title">CSVファイルを取り込む</h3>
+        <h3 class="modal-title" id="csv-modal-title">CSVファイルを取り込む</h3>
         <button class="btn-close" id="csv-modal-close">&times;</button>
       </div>
-      <div class="form">
-        <p class="text-muted" style="margin-bottom: 1rem;">クレジットカード明細のCSVファイルをアップロードしてください。</p>
+
+      <!-- ステップ1: ファイル選択 -->
+      <div id="csv-step-upload" class="form">
+        <p class="text-muted" style="margin-bottom: 1rem;">クレジットカード明細のCSVファイルをアップロードしてください。<br>科目は自動で推定されます。</p>
         <div class="file-upload-area" id="csv-upload-area">
           <input type="file" id="csv-file" accept=".csv" class="file-input">
           <div class="file-upload-content">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="upload-icon"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
             <span class="upload-text">CSVファイルを選択</span>
+            <span class="upload-hint">楽天・三井住友・Amazon等に対応</span>
           </div>
         </div>
-        <button class="btn btn-primary btn-full" id="btn-import-csv" style="margin-top:1rem;" disabled>取り込む</button>
+        <div class="csv-loading" id="csv-loading" style="display:none;">
+          <div class="ocr-spinner"></div>
+          <span>CSVを解析中...</span>
+        </div>
+      </div>
+
+      <!-- ステップ2: プレビュー＆編集 -->
+      <div id="csv-step-preview" style="display:none;">
+        <div class="csv-preview-header">
+          <span class="csv-preview-count" id="csv-preview-count"></span>
+          <button class="btn btn-outline btn-sm" id="csv-back-btn">← ファイル再選択</button>
+        </div>
+        <div class="csv-preview-table-wrap">
+          <table class="csv-preview-table">
+            <thead>
+              <tr>
+                <th class="csv-th-check"><input type="checkbox" id="csv-check-all" checked></th>
+                <th>日付</th>
+                <th>金額</th>
+                <th>摘要</th>
+                <th>科目</th>
+              </tr>
+            </thead>
+            <tbody id="csv-preview-body"></tbody>
+          </table>
+        </div>
+        <div class="csv-preview-actions">
+          <span class="csv-selected-count" id="csv-selected-count"></span>
+          <button class="btn btn-primary" id="btn-import-csv">選択した項目を登録</button>
+        </div>
       </div>
     </div>
   </div>

@@ -46,6 +46,36 @@ const App = {
     misc: '#a855f7'
   },
 
+  // 科目自動推定用キーワードマッピング（フロントエンド側）
+  categoryKeywords: {
+    travel: ['交通', '電車', 'JR', 'Suica', 'PASMO', 'タクシー', 'バス', '新幹線', 'ANA', 'JAL', '航空', '高速', 'ETC', 'ガソリン', '駐車', '鉄道', 'きっぷ', '空港', 'エクスプレス', 'uber', 'Uber'],
+    communication: ['通信', '電話', '携帯', 'ソフトバンク', 'au', 'docomo', 'NTT', 'インターネット', 'WiFi', 'AWS', 'さくら', 'サーバー', 'ドメイン', 'Xserver', 'ConoHa', 'Zoom', 'Slack'],
+    supplies: ['Amazon', 'アマゾン', 'ヨドバシ', 'ビックカメラ', '文具', '事務', 'コピー', '用紙', 'インク', '100均', 'ダイソー', 'セリア', 'ホームセンター', 'ニトリ', 'IKEA', '消耗品', 'LOFT', 'ハンズ'],
+    advertising: ['広告', 'Google Ads', 'Facebook', 'Instagram', 'Twitter', '宣伝', 'チラシ', '印刷', 'PR'],
+    entertainment: ['飲食', '居酒屋', 'レストラン', '食事', 'ランチ', 'ディナー', '会食', '懇親', '接待', 'カフェ', 'スターバックス', 'タリーズ', 'ドトール', 'マクドナルド', 'ガスト', 'コンビニ', 'セブン', 'ファミリーマート', 'ローソン', '弁当'],
+    outsourcing: ['外注', '業務委託', 'ランサーズ', 'クラウドワークス', 'ココナラ', 'デザイン料', '開発費'],
+    fees: ['振込手数料', '手数料', 'PayPal', 'Stripe', '決済', '銀行', 'ATM', '送金', '年会費'],
+    home_office: ['電気', 'ガス', '水道', '家賃', '光熱'],
+    depreciation: ['パソコン', 'PC', 'Mac', 'MacBook', 'iPhone', 'iPad', 'カメラ', 'ディスプレイ', 'モニター', 'プリンター']
+  },
+
+  // 科目推定（フロントエンドで即座に推定）
+  suggestCategory(description) {
+    if (!description) return 'misc';
+    const desc = description.toLowerCase();
+    for (const [category, keywords] of Object.entries(this.categoryKeywords)) {
+      for (const keyword of keywords) {
+        if (desc.includes(keyword.toLowerCase())) {
+          return category;
+        }
+      }
+    }
+    return 'misc';
+  },
+
+  // CSV取込プレビューデータを保持
+  csvPreviewData: [],
+
   // 初期化
   init() {
     this.setupNavigation();
@@ -233,40 +263,46 @@ const App = {
     // CSVモーダル
     document.getElementById('btn-csv-import').addEventListener('click', (e) => {
       e.preventDefault();
-      document.getElementById('csv-modal-overlay').classList.add('active');
+      this.openCsvModal();
     });
     document.getElementById('csv-modal-close').addEventListener('click', () => {
-      document.getElementById('csv-modal-overlay').classList.remove('active');
+      this.closeCsvModal();
     });
     document.getElementById('csv-modal-overlay').addEventListener('click', (e) => {
       if (e.target === e.currentTarget) {
-        document.getElementById('csv-modal-overlay').classList.remove('active');
+        this.closeCsvModal();
       }
     });
 
-    // CSVインポート
-    document.getElementById('csv-file').addEventListener('change', (e) => {
-      document.getElementById('btn-import-csv').disabled = !e.target.files.length;
-    });
-
-    document.getElementById('btn-import-csv').addEventListener('click', async () => {
-      const file = document.getElementById('csv-file').files[0];
+    // CSVファイル選択 → プレビュー
+    document.getElementById('csv-file').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
       if (!file) return;
+      await this.loadCsvPreview(file);
+    });
 
-      const formData = new FormData();
-      formData.append('csv', file);
+    // CSV戻るボタン
+    document.getElementById('csv-back-btn').addEventListener('click', () => {
+      document.getElementById('csv-step-preview').style.display = 'none';
+      document.getElementById('csv-step-upload').style.display = '';
+      document.getElementById('csv-modal-title').textContent = 'CSVファイルを取り込む';
+      document.getElementById('csv-file').value = '';
+      this.csvPreviewData = [];
+    });
 
-      try {
-        const res = await fetch(BASE + '/api/import-csv', { method: 'POST', body: formData });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'インポートに失敗しました');
-        this.showToast(`${data.imported}件の取引をインポートしました`, 'success');
-        document.getElementById('csv-modal-overlay').classList.remove('active');
-        document.getElementById('csv-file').value = '';
-        this.loadDashboard();
-      } catch (err) {
-        this.showToast(err.message, 'error');
-      }
+    // CSV全選択チェックボックス
+    document.getElementById('csv-check-all').addEventListener('change', (e) => {
+      const checked = e.target.checked;
+      document.querySelectorAll('.csv-row-check').forEach(cb => {
+        cb.checked = checked;
+        cb.closest('tr').classList.toggle('csv-row-unchecked', !checked);
+      });
+      this.updateCsvSelectedCount();
+    });
+
+    // CSV一括登録
+    document.getElementById('btn-import-csv').addEventListener('click', async () => {
+      await this.importCsvRows();
     });
 
     // AI出力
@@ -319,7 +355,7 @@ const App = {
     document.getElementById('sidebar-overlay').classList.remove('active');
   },
 
-  // ファイルアップロード
+  // ファイルアップロード + OCR自動読取
   setupFileUpload() {
     const receiptInput = document.getElementById('expense-receipt');
     const preview = document.getElementById('receipt-preview');
@@ -334,6 +370,8 @@ const App = {
           previewImg.src = ev.target.result;
           preview.style.display = '';
           uploadContent.style.display = 'none';
+          // OCR自動読取を開始
+          this.runOCR(file);
         };
         reader.readAsDataURL(file);
       }
@@ -342,12 +380,184 @@ const App = {
     document.getElementById('btn-remove-receipt').addEventListener('click', () => {
       this.resetReceiptPreview();
     });
+
+    document.getElementById('ocr-result-close').addEventListener('click', () => {
+      document.getElementById('ocr-result-banner').style.display = 'none';
+    });
+  },
+
+  // OCR実行
+  async runOCR(imageFile) {
+    const loadingEl = document.getElementById('ocr-loading');
+    const loadingText = document.getElementById('ocr-loading-text');
+    const progressFill = document.getElementById('ocr-progress-fill');
+    const resultBanner = document.getElementById('ocr-result-banner');
+    const resultText = document.getElementById('ocr-result-text');
+
+    // ローディング表示
+    loadingEl.style.display = 'flex';
+    resultBanner.style.display = 'none';
+    progressFill.style.width = '0%';
+    loadingText.textContent = 'OCRエンジン起動中...';
+
+    try {
+      const result = await Tesseract.recognize(imageFile, 'jpn+eng', {
+        logger: (m) => {
+          if (m.status === 'recognizing text') {
+            const pct = Math.round(m.progress * 100);
+            progressFill.style.width = pct + '%';
+            loadingText.textContent = `読み取り中... ${pct}%`;
+          } else if (m.status === 'loading language traineddata') {
+            loadingText.textContent = '言語データ読み込み中...';
+            progressFill.style.width = '10%';
+          }
+        }
+      });
+
+      const text = result.data.text;
+      console.log('OCR Result:', text);
+
+      // テキストから情報を抽出
+      const extracted = this.parseReceiptText(text);
+      loadingEl.style.display = 'none';
+
+      // フォームに自動入力
+      const filled = [];
+      if (extracted.amount) {
+        document.getElementById('expense-amount').value = extracted.amount;
+        filled.push(`金額: ¥${extracted.amount.toLocaleString()}`);
+      }
+      if (extracted.date) {
+        document.getElementById('expense-date').value = extracted.date;
+        filled.push(`日付: ${extracted.date}`);
+      }
+      if (extracted.storeName) {
+        document.getElementById('expense-description').value = extracted.storeName;
+        filled.push(`摘要: ${extracted.storeName}`);
+      }
+
+      // 科目自動推定
+      const descForSuggestion = extracted.storeName || text;
+      const suggestedCategory = this.suggestCategory(descForSuggestion);
+      const categoryRadio = document.querySelector(`input[name="category"][value="${suggestedCategory}"]`);
+      if (categoryRadio) {
+        categoryRadio.checked = true;
+        filled.push(`科目: ${this.categoryNames[suggestedCategory]}`);
+      }
+
+      // 結果表示
+      if (filled.length > 0) {
+        resultText.textContent = `自動入力: ${filled.join(' / ')}`;
+        resultBanner.style.display = 'flex';
+        this.showToast(`レシートから${filled.length}項目を自動入力しました`, 'success');
+      } else {
+        resultText.textContent = 'テキストを読み取れましたが、自動入力可能な項目が見つかりませんでした';
+        resultBanner.style.display = 'flex';
+        this.showToast('レシートの読み取りは完了しましたが、自動入力できませんでした', 'info');
+      }
+
+    } catch (err) {
+      console.error('OCR Error:', err);
+      loadingEl.style.display = 'none';
+      this.showToast('レシート読み取りに失敗しました', 'error');
+    }
+  },
+
+  // レシートテキストから情報を抽出
+  parseReceiptText(text) {
+    const result = { date: null, amount: null, storeName: null };
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+    // === 金額の抽出 ===
+    // 合計・小計・税込に関する金額を優先
+    const totalPatterns = [
+      /(?:合計|小計|税込|お支払|総計|請求|お会計|TOTAL|Total)[\s:：]*[¥￥]?\s*([\d,]+)/i,
+      /[¥￥]\s*([\d,]+)[\s]*(?:合計|小計|税込|お支払|総計)/i,
+      /(?:合計|小計|税込)[\s\S]{0,10}?([\d,]{3,})\s*円/i,
+    ];
+
+    for (const pattern of totalPatterns) {
+      for (const line of lines) {
+        const match = line.match(pattern);
+        if (match) {
+          const amt = parseInt(match[1].replace(/,/g, ''));
+          if (amt > 0 && amt < 10000000) {
+            result.amount = amt;
+            break;
+          }
+        }
+      }
+      if (result.amount) break;
+    }
+
+    // 合計が見つからない場合、最大の金額を採用
+    if (!result.amount) {
+      let maxAmount = 0;
+      const amountPattern = /[¥￥]\s*([\d,]+)|(\d{1,3}(?:,\d{3})+)\s*円|([\d,]{3,})\s*円/g;
+      for (const line of lines) {
+        let m;
+        while ((m = amountPattern.exec(line)) !== null) {
+          const numStr = (m[1] || m[2] || m[3] || '').replace(/,/g, '');
+          const num = parseInt(numStr);
+          if (num > maxAmount && num < 10000000 && num >= 10) {
+            maxAmount = num;
+          }
+        }
+      }
+      if (maxAmount > 0) result.amount = maxAmount;
+    }
+
+    // === 日付の抽出 ===
+    const datePatterns = [
+      // 2024年1月15日, 2024年01月15日
+      /(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日/,
+      // 2024/01/15, 2024-01-15
+      /(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/,
+      // R6.1.15, R06/01/15, 令和6年1月15日
+      /[RＲ令和]\s*(\d{1,2})[\.\/年]\s*(\d{1,2})[\.\/月]\s*(\d{1,2})/,
+    ];
+
+    for (const pattern of datePatterns) {
+      for (const line of lines) {
+        const match = line.match(pattern);
+        if (match) {
+          if (pattern === datePatterns[2]) {
+            // 和暦変換
+            const year = 2018 + parseInt(match[1]);
+            result.date = `${year}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
+          } else {
+            const year = parseInt(match[1]);
+            if (year >= 2000 && year <= 2099) {
+              result.date = `${year}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
+            }
+          }
+          if (result.date) break;
+        }
+      }
+      if (result.date) break;
+    }
+
+    // === 店舗名の抽出 ===
+    // レシートの最初の数行から店舗名を推定（数字や記号だけの行は除外）
+    const skipPatterns = /^[\d\s\-\/\.\:¥￥円%=\*]+$|^TEL|^電話|^〒|^\d{3}-|^http|^www|^レシート|^領収/i;
+    for (let i = 0; i < Math.min(lines.length, 6); i++) {
+      const line = lines[i];
+      if (line.length >= 2 && line.length <= 40 && !skipPatterns.test(line)) {
+        // 店舗名らしい行を採用
+        result.storeName = line.replace(/[\s　]+/g, ' ').trim();
+        break;
+      }
+    }
+
+    return result;
   },
 
   resetReceiptPreview() {
     document.getElementById('expense-receipt').value = '';
     document.getElementById('receipt-preview').style.display = 'none';
     document.querySelector('#receipt-upload-area .file-upload-content').style.display = '';
+    document.getElementById('ocr-loading').style.display = 'none';
+    document.getElementById('ocr-result-banner').style.display = 'none';
   },
 
   // フィルター設定
@@ -870,6 +1080,133 @@ const App = {
       toast.classList.add('removing');
       setTimeout(() => toast.remove(), 300);
     }, 3000);
+  },
+
+  // === CSV取込機能 ===
+
+  openCsvModal() {
+    document.getElementById('csv-step-upload').style.display = '';
+    document.getElementById('csv-step-preview').style.display = 'none';
+    document.getElementById('csv-loading').style.display = 'none';
+    document.getElementById('csv-modal-title').textContent = 'CSVファイルを取り込む';
+    document.getElementById('csv-file').value = '';
+    this.csvPreviewData = [];
+    document.getElementById('csv-modal-overlay').classList.add('active');
+  },
+
+  closeCsvModal() {
+    document.getElementById('csv-modal-overlay').classList.remove('active');
+  },
+
+  async loadCsvPreview(file) {
+    const loading = document.getElementById('csv-loading');
+    loading.style.display = 'flex';
+
+    const formData = new FormData();
+    formData.append('csv', file);
+
+    try {
+      const res = await fetch(BASE + '/api/preview-csv', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'CSV解析に失敗しました');
+
+      this.csvPreviewData = data.rows;
+      loading.style.display = 'none';
+
+      if (data.rows.length === 0) {
+        this.showToast('有効なデータが見つかりませんでした', 'error');
+        return;
+      }
+
+      this.renderCsvPreview(data.rows);
+    } catch (err) {
+      loading.style.display = 'none';
+      this.showToast(err.message, 'error');
+    }
+  },
+
+  renderCsvPreview(rows) {
+    document.getElementById('csv-step-upload').style.display = 'none';
+    document.getElementById('csv-step-preview').style.display = '';
+    document.getElementById('csv-modal-title').textContent = 'CSV取込プレビュー';
+    document.getElementById('csv-preview-count').textContent = `${rows.length}件の取引が見つかりました`;
+    document.getElementById('csv-check-all').checked = true;
+
+    const categoryOptions = Object.entries(this.categoryNames)
+      .map(([val, name]) => `<option value="${val}">${this.categoryEmojis[val] || ''} ${name}</option>`)
+      .join('');
+
+    const tbody = document.getElementById('csv-preview-body');
+    tbody.innerHTML = rows.map((row, idx) => `
+      <tr data-idx="${idx}">
+        <td style="text-align:center;"><input type="checkbox" class="csv-row-check" data-idx="${idx}" checked></td>
+        <td class="csv-date">${this.escapeHtml(row.date)}</td>
+        <td class="csv-amount">¥${Math.abs(row.amount).toLocaleString()}</td>
+        <td class="csv-desc" title="${this.escapeHtml(row.description)}">${this.escapeHtml(row.description)}</td>
+        <td>
+          <select class="csv-category-select" data-idx="${idx}">
+            ${categoryOptions}
+          </select>
+        </td>
+      </tr>
+    `).join('');
+
+    // 推定カテゴリをセット
+    rows.forEach((row, idx) => {
+      const select = tbody.querySelector(`select[data-idx="${idx}"]`);
+      if (select) select.value = row.category;
+    });
+
+    // チェックボックスのイベント
+    tbody.querySelectorAll('.csv-row-check').forEach(cb => {
+      cb.addEventListener('change', (e) => {
+        e.target.closest('tr').classList.toggle('csv-row-unchecked', !e.target.checked);
+        this.updateCsvSelectedCount();
+      });
+    });
+
+    this.updateCsvSelectedCount();
+  },
+
+  updateCsvSelectedCount() {
+    const checked = document.querySelectorAll('.csv-row-check:checked').length;
+    const total = document.querySelectorAll('.csv-row-check').length;
+    document.getElementById('csv-selected-count').textContent = `${checked}/${total}件 選択中`;
+    document.getElementById('btn-import-csv').disabled = checked === 0;
+  },
+
+  async importCsvRows() {
+    const checkedRows = [];
+    document.querySelectorAll('.csv-row-check:checked').forEach(cb => {
+      const idx = parseInt(cb.dataset.idx);
+      const row = { ...this.csvPreviewData[idx] };
+      // ユーザーが変更したカテゴリを反映
+      const select = document.querySelector(`.csv-category-select[data-idx="${idx}"]`);
+      if (select) row.category = select.value;
+      checkedRows.push(row);
+    });
+
+    if (checkedRows.length === 0) {
+      this.showToast('取り込む項目を選択してください', 'error');
+      return;
+    }
+
+    try {
+      const res = await fetch(BASE + '/api/import-csv', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: checkedRows })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '取込に失敗しました');
+
+      this.showToast(`${data.imported}件の経費を取り込みました`, 'success');
+      this.closeCsvModal();
+      this.csvPreviewData = [];
+      this.loadDashboard();
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
   }
 };
 

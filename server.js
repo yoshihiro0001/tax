@@ -396,38 +396,127 @@ router.get('/api/ai-format/:year', (req, res) => {
   }
 });
 
+// === 科目自動推定ロジック ===
+const categoryKeywords = {
+  travel: ['交通', '電車', 'JR', 'Suica', 'PASMO', 'タクシー', 'バス', '新幹線', 'ANA', 'JAL', '航空', '高速', 'ETC', 'ガソリン', '駐車', '鉄道', 'きっぷ', '空港', 'エクスプレス', 'uber', 'Uber'],
+  communication: ['通信', '電話', '携帯', 'ソフトバンク', 'au', 'docomo', 'NTT', 'インターネット', 'WiFi', 'AWS', 'さくら', 'サーバー', 'ドメイン', 'Xserver', 'ConoHa', 'Zoom', 'Slack', 'Google Cloud', 'Azure', 'Heroku', 'Vercel'],
+  supplies: ['Amazon', 'アマゾン', 'ヨドバシ', 'ビックカメラ', '文具', '事務', 'コピー', '用紙', 'インク', 'トナー', '100均', 'ダイソー', 'セリア', 'ホームセンター', 'コーナン', 'カインズ', 'ニトリ', 'IKEA', '消耗品', 'USB', 'ケーブル', '電池', '文房具', 'LOFT', '東急ハンズ', 'ハンズ'],
+  advertising: ['広告', 'Google Ads', 'Facebook', 'Instagram', 'Twitter', '宣伝', 'チラシ', '印刷', 'PR', 'マーケティング', 'SEO', 'Yahoo', 'LINE広告', 'TikTok'],
+  entertainment: ['飲食', '居酒屋', 'レストラン', '食事', 'ランチ', 'ディナー', '会食', '懇親', '接待', 'カフェ', 'スターバックス', 'Starbucks', 'タリーズ', 'ドトール', 'マクドナルド', 'McDonald', 'ガスト', 'サイゼリヤ', 'すき家', '吉野家', '松屋', 'コンビニ', 'セブン', 'ファミリーマート', 'ローソン', '弁当', 'ウーバーイーツ', 'UberEats', '出前館'],
+  outsourcing: ['外注', '業務委託', 'ランサーズ', 'クラウドワークス', 'ココナラ', 'Fiverr', 'Upwork', 'デザイン料', '開発費', '翻訳'],
+  fees: ['振込手数料', '手数料', 'PayPal', 'Stripe', '決済', '銀行', 'ATM', '送金', 'カード年会費', '年会費'],
+  home_office: ['電気', 'ガス', '水道', '家賃', '光熱'],
+  depreciation: ['パソコン', 'PC', 'Mac', 'MacBook', 'iPhone', 'iPad', 'カメラ', 'ディスプレイ', 'モニター', 'プリンター']
+};
+
+function suggestCategory(description) {
+  if (!description) return 'misc';
+  const desc = description.toLowerCase();
+  for (const [category, keywords] of Object.entries(categoryKeywords)) {
+    for (const keyword of keywords) {
+      if (desc.includes(keyword.toLowerCase())) {
+        return category;
+      }
+    }
+  }
+  return 'misc';
+}
+
+// 日付フォーマット正規化
+function normalizeDate(dateStr) {
+  if (!dateStr) return '';
+  // すでに YYYY-MM-DD 形式
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  // YYYY/MM/DD
+  const slash = dateStr.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if (slash) return `${slash[1]}-${slash[2].padStart(2,'0')}-${slash[3].padStart(2,'0')}`;
+  // 和暦 R6 → 2024 etc.
+  const wareki = dateStr.match(/[RＲ令](\d{1,2})[\.\/年](\d{1,2})[\.\/月](\d{1,2})/);
+  if (wareki) {
+    const year = 2018 + parseInt(wareki[1]);
+    return `${year}-${wareki[2].padStart(2,'0')}-${wareki[3].padStart(2,'0')}`;
+  }
+  // MM/DD/YYYY or DD/MM/YYYY (try best)
+  const mdy = dateStr.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (mdy) return `${mdy[3]}-${mdy[1].padStart(2,'0')}-${mdy[2].padStart(2,'0')}`;
+  // 2024年1月15日
+  const jpDate = dateStr.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+  if (jpDate) return `${jpDate[1]}-${jpDate[2].padStart(2,'0')}-${jpDate[3].padStart(2,'0')}`;
+  return dateStr;
+}
+
 // === CSV インポート ===
-router.post('/api/import-csv', upload.single('csv'), (req, res) => {
+
+// CSVプレビュー（科目自動推定付き）
+router.post('/api/preview-csv', upload.single('csv'), (req, res) => {
   try {
     const Papa = require('papaparse');
     const csvContent = fs.readFileSync(req.file.path, 'utf-8');
-    const { data } = Papa.parse(csvContent, { header: true, skipEmptyLines: true });
+    const { data, meta } = Papa.parse(csvContent, { header: true, skipEmptyLines: true });
+
+    const rows = [];
+    for (const row of data) {
+      const rawDate = row['利用日'] || row['ご利用日'] || row['日付'] || row['Date'] || row['利用年月日'] || '';
+      const rawAmount = row['金額'] || row['利用金額'] || row['Amount'] || row['ご利用金額'] || row['支払金額'] || '0';
+      const desc = row['利用店舗'] || row['ご利用先'] || row['摘要'] || row['Description'] || row['ご利用先など'] || row['利用先'] || '';
+
+      const date = normalizeDate(rawDate);
+      const amount = Math.abs(parseInt(String(rawAmount).replace(/[^0-9\-]/g, '')) || 0);
+
+      if (date && amount > 0) {
+        rows.push({
+          date,
+          amount,
+          description: desc.trim(),
+          category: suggestCategory(desc)
+        });
+      }
+    }
+
+    // 一時ファイル削除
+    fs.unlinkSync(req.file.path);
+
+    res.json({ success: true, rows, headers: meta.fields || [] });
+  } catch (err) {
+    if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// CSV一括登録（プレビュー確認後）
+router.post('/api/import-csv', express.json({ limit: '10mb' }), (req, res) => {
+  try {
+    const { rows } = req.body;
+    if (!rows || !Array.isArray(rows)) {
+      return res.status(400).json({ error: '取引データが必要です' });
+    }
 
     const stmt = db.prepare(
       'INSERT INTO expenses (date, amount, category, description, source) VALUES (?, ?, ?, ?, ?)'
     );
 
-    const insertMany = db.transaction((rows) => {
+    const insertMany = db.transaction((items) => {
       let count = 0;
-      for (const row of rows) {
-        const date = row['利用日'] || row['ご利用日'] || row['日付'] || row['Date'] || '';
-        const amount = parseInt((row['金額'] || row['利用金額'] || row['Amount'] || '0').replace(/[^0-9-]/g, ''));
-        const desc = row['利用店舗'] || row['ご利用先'] || row['摘要'] || row['Description'] || '';
-
-        if (date && amount > 0) {
-          stmt.run(date, Math.abs(amount), 'misc', desc, 'csv');
+      for (const item of items) {
+        if (item.date && item.amount > 0) {
+          stmt.run(item.date, Math.abs(item.amount), item.category || 'misc', item.description || '', 'csv');
           count++;
         }
       }
       return count;
     });
 
-    const count = insertMany(data);
-    fs.unlinkSync(req.file.path);
+    const count = insertMany(rows);
     res.json({ success: true, imported: count });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// 科目推定API（フロントエンドからも利用可能）
+router.post('/api/suggest-category', express.json(), (req, res) => {
+  const { description } = req.body;
+  res.json({ category: suggestCategory(description) });
 });
 
 // === バックアップ ===
