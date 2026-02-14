@@ -25,12 +25,6 @@
       <h1 class="auth-title">Keihi</h1>
       <p class="auth-sub">シンプルな経費管理</p>
 
-      <!-- Google ログイン -->
-      <div id="google-signin-wrap" style="display:none">
-        <div id="google-signin-btn" class="google-btn-wrap"></div>
-        <div class="auth-divider"><span>または</span></div>
-      </div>
-
       <form id="form-login" class="auth-form">
         <input type="email" id="login-email" placeholder="メールアドレス" required autocomplete="email">
         <input type="password" id="login-password" placeholder="パスワード" required autocomplete="current-password">
@@ -43,6 +37,12 @@
         <input type="password" id="reg-password" placeholder="パスワード（6文字以上）" required autocomplete="new-password" minlength="6">
         <button type="submit" class="btn-auth">アカウント作成</button>
       </form>
+
+      <!-- Google ログイン（メールフォームの下） -->
+      <div id="google-signin-wrap" style="display:none">
+        <div class="auth-divider"><span>または</span></div>
+        <div id="google-signin-btn" class="google-btn-wrap"></div>
+      </div>
 
       <p class="auth-toggle">
         <span id="auth-toggle-text">アカウントをお持ちでない方</span>

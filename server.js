@@ -91,6 +91,15 @@ db.exec(`
   );
 `);
 
+// === マイグレーション: 既存テーブルにカラム追加 ===
+const migrations = [
+  "ALTER TABLE users ADD COLUMN avatar_url TEXT",
+  "ALTER TABLE users ADD COLUMN auth_provider TEXT DEFAULT 'local'",
+];
+for (const sql of migrations) {
+  try { db.exec(sql); } catch (e) { /* カラムが既に存在する場合は無視 */ }
+}
+
 // ファイルアップロード設定
 const storage = multer.diskStorage({
   destination: './uploads/',
