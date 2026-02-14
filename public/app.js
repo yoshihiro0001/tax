@@ -1,6 +1,9 @@
 /* ============================================
    Keihi v2 — App
    ============================================ */
+// ベースパス自動検出（/tax 配下なら /tax、ローカルなら空文字）
+const BASE = location.pathname.replace(/\/+$/, '').startsWith('/tax') ? '/tax' : '';
+
 const App = {
   user: null,
   books: [],
@@ -61,7 +64,8 @@ const App = {
   // API helper
   // ========================================
   async api(url, opts = {}) {
-    const res = await fetch(url, {
+    const fullUrl = (url.startsWith('/api') ? BASE : '') + url;
+    const res = await fetch(fullUrl, {
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
       ...opts
@@ -472,7 +476,7 @@ const App = {
     if (this.receiptFile) fd.append('receipt', this.receiptFile);
 
     try {
-      await fetch('/api/expense', { method: 'POST', body: fd, credentials: 'same-origin' });
+      await fetch(BASE + '/api/expense', { method: 'POST', body: fd, credentials: 'same-origin' });
       this.closeOverlay('confirm');
       this.showSuccess(qs('#cf-amount').value, qs('#cf-desc').value, this.categoryName(catEl.dataset.cat));
       this.loadDashboard();
@@ -708,7 +712,7 @@ const App = {
       const fd = new FormData();
       fd.append('csv', file);
       try {
-        const res = await fetch('/api/preview-csv', { method: 'POST', body: fd, credentials: 'same-origin' });
+        const res = await fetch(BASE + '/api/preview-csv', { method: 'POST', body: fd, credentials: 'same-origin' });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
         this.csvRows = data.rows;
