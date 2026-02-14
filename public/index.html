@@ -3,641 +3,332 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Keihi - 経費管理</title>
+  <title>Keihi - シンプル経費管理</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#6366f1">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+JP:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- トースト通知 -->
   <div id="toast-container"></div>
 
-  <!-- アプリシェル -->
-  <div class="app">
-    <!-- サイドバー（デスクトップ） -->
-    <nav class="sidebar" id="sidebar">
-      <div class="sidebar-header">
-        <div class="logo">
-          <div class="logo-icon">K</div>
-          <span class="logo-text">Keihi</span>
-        </div>
-      </div>
+  <!-- ====== 認証画面 ====== -->
+  <div id="auth-screen" class="screen">
+    <div class="auth-card">
+      <div class="auth-logo">K</div>
+      <h1 class="auth-title">Keihi</h1>
+      <p class="auth-sub">シンプルな経費管理</p>
 
-      <ul class="nav-menu">
-        <li>
-          <a href="#" class="nav-item active" data-view="dashboard">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-            <span>ダッシュボード</span>
-          </a>
-        </li>
-        <li>
-          <a href="#" class="nav-item" data-view="income">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-            <span>収入入力</span>
-          </a>
-        </li>
-        <li>
-          <a href="#" class="nav-item" data-view="expense">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
-            <span>経費入力</span>
-          </a>
-        </li>
-        <li>
-          <a href="#" class="nav-item" data-view="history">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
-            <span>取引履歴</span>
-          </a>
-        </li>
-        <li>
-          <a href="#" class="nav-item" data-view="report">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
-            <span>レポート</span>
-          </a>
-        </li>
-        <li>
-          <a href="#" class="nav-item" data-view="ai-export">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 0-4 4c0 1.5.8 2.8 2 3.4V11h4V9.4c1.2-.7 2-2 2-3.4a4 4 0 0 0-4-4Z"/><path d="M10 11v2a2 2 0 1 0 4 0v-2"/><line x1="12" y1="15" x2="12" y2="19"/><line x1="8" y1="19" x2="16" y2="19"/><line x1="8" y1="22" x2="16" y2="22"/></svg>
-            <span>AI出力</span>
-          </a>
-        </li>
-      </ul>
+      <form id="form-login" class="auth-form">
+        <input type="email" id="login-email" placeholder="メールアドレス" required autocomplete="email">
+        <input type="password" id="login-password" placeholder="パスワード" required autocomplete="current-password">
+        <button type="submit" class="btn-auth">ログイン</button>
+      </form>
 
-      <div class="sidebar-footer">
-        <a href="#" class="nav-item" id="btn-csv-import">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          <span>CSV取込</span>
-        </a>
-        <a href="#" class="nav-item" id="btn-backup" onclick="window.location.href=(location.pathname.startsWith('/tax')?'/tax':'')+'/api/export'; return false;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          <span>バックアップ</span>
-        </a>
-      </div>
-    </nav>
+      <form id="form-register" class="auth-form" style="display:none">
+        <input type="text" id="reg-name" placeholder="お名前" required autocomplete="name">
+        <input type="email" id="reg-email" placeholder="メールアドレス" required autocomplete="email">
+        <input type="password" id="reg-password" placeholder="パスワード（6文字以上）" required autocomplete="new-password" minlength="6">
+        <button type="submit" class="btn-auth">アカウント作成</button>
+      </form>
 
-    <!-- メインコンテンツ -->
-    <main class="main-content">
-      <!-- モバイルヘッダー -->
-      <header class="mobile-header">
-        <button class="menu-toggle" id="menu-toggle">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-        </button>
-        <div class="mobile-logo">
-          <div class="logo-icon small">K</div>
-          <span>Keihi</span>
-        </div>
-        <div class="mobile-actions">
-          <button class="btn-icon" onclick="App.navigate('income')" title="収入追加">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          </button>
-        </div>
-      </header>
-
-      <!-- ダッシュボードビュー -->
-      <section class="view active" id="view-dashboard">
-        <div class="view-header">
-          <div>
-            <h1 class="view-title">ダッシュボード</h1>
-            <p class="view-subtitle" id="dashboard-date"></p>
-          </div>
-          <div class="view-actions">
-            <button class="btn btn-primary" onclick="App.navigate('expense')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              経費を追加
-            </button>
-          </div>
-        </div>
-
-        <!-- サマリーカード -->
-        <div class="stats-grid">
-          <div class="stat-card stat-income">
-            <div class="stat-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-            </div>
-            <div class="stat-info">
-              <span class="stat-label">今月の収入</span>
-              <span class="stat-value" id="stat-month-income">¥0</span>
-            </div>
-          </div>
-          <div class="stat-card stat-expense">
-            <div class="stat-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
-            </div>
-            <div class="stat-info">
-              <span class="stat-label">今月の経費</span>
-              <span class="stat-value" id="stat-month-expense">¥0</span>
-            </div>
-          </div>
-          <div class="stat-card stat-year-income">
-            <div class="stat-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.2 7.8l-7.7 7.7-4-4-5.7 5.7"/><path d="M15 7h6v6"/></svg>
-            </div>
-            <div class="stat-info">
-              <span class="stat-label">年間収入</span>
-              <span class="stat-value" id="stat-year-income">¥0</span>
-            </div>
-          </div>
-          <div class="stat-card stat-profit">
-            <div class="stat-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><line x1="12" y1="18" x2="12" y2="6"/></svg>
-            </div>
-            <div class="stat-info">
-              <span class="stat-label">年間利益</span>
-              <span class="stat-value" id="stat-year-profit">¥0</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- チャートエリア -->
-        <div class="charts-grid">
-          <div class="chart-card">
-            <h3 class="chart-title">月別推移</h3>
-            <div class="chart-container">
-              <canvas id="chart-monthly"></canvas>
-            </div>
-          </div>
-          <div class="chart-card">
-            <h3 class="chart-title">経費内訳</h3>
-            <div class="chart-container chart-container-doughnut">
-              <canvas id="chart-category"></canvas>
-            </div>
-          </div>
-        </div>
-
-        <!-- 最近の取引 -->
-        <div class="card">
-          <div class="card-header">
-            <h3 class="card-title">最近の取引</h3>
-            <a href="#" class="link" onclick="App.navigate('history'); return false;">すべて見る</a>
-          </div>
-          <div class="transactions-list" id="recent-transactions"></div>
-        </div>
-      </section>
-
-      <!-- 収入入力ビュー -->
-      <section class="view" id="view-income">
-        <div class="view-header">
-          <div>
-            <h1 class="view-title">収入を記録</h1>
-            <p class="view-subtitle">新しい収入を入力してください</p>
-          </div>
-        </div>
-
-        <div class="form-card">
-          <form id="form-income" class="form">
-            <div class="form-group">
-              <label class="form-label" for="income-date">日付</label>
-              <input type="date" id="income-date" class="form-input" required>
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="income-amount">金額（円）</label>
-              <div class="input-with-prefix">
-                <span class="input-prefix">¥</span>
-                <input type="number" id="income-amount" class="form-input" placeholder="0" inputmode="numeric" required>
-              </div>
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="income-type">種類</label>
-              <select id="income-type" class="form-select">
-                <option value="振込">振込</option>
-                <option value="現金">現金</option>
-                <option value="その他">その他</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="income-description">摘要</label>
-              <input type="text" id="income-description" class="form-input" placeholder="例: ○○株式会社 報酬">
-            </div>
-            <button type="submit" class="btn btn-primary btn-lg btn-full">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              収入を保存
-            </button>
-          </form>
-        </div>
-      </section>
-
-      <!-- 経費入力ビュー (Photo-First Design) -->
-      <section class="view" id="view-expense">
-
-        <!-- ===== Step 1: カメラ撮影 ===== -->
-        <div class="expense-step active" id="expense-capture">
-          <div class="capture-hero">
-            <div class="capture-header-text">
-              <h1 class="capture-title">経費を記録</h1>
-              <p class="capture-subtitle">レシートを撮影するだけで<br>日付・金額・科目を自動入力</p>
-            </div>
-            <label class="capture-ring" for="expense-receipt-capture">
-              <input type="file" id="expense-receipt-capture" accept="image/*" capture="environment" class="sr-only">
-              <div class="capture-ring-glow"></div>
-              <div class="capture-ring-border"></div>
-              <div class="capture-ring-inner">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-                  <circle cx="12" cy="13" r="4"/>
-                </svg>
-              </div>
-            </label>
-            <p class="capture-cta">タップしてレシートを撮影</p>
-            <p class="capture-sub-hint">画像ライブラリからも選択できます</p>
-          </div>
-          <div class="capture-divider"><span>または</span></div>
-          <button type="button" class="btn-manual-entry" id="btn-manual-input">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-            手動で入力する
-          </button>
-        </div>
-
-        <!-- ===== Step 2: OCRスキャン中 ===== -->
-        <div class="expense-step" id="expense-scanning">
-          <div class="scanning-container">
-            <div class="scanning-image-wrap">
-              <img id="scanning-receipt-img" alt="">
-              <div class="scan-line"></div>
-              <div class="scan-corners">
-                <span class="scan-corner tl"></span>
-                <span class="scan-corner tr"></span>
-                <span class="scan-corner bl"></span>
-                <span class="scan-corner br"></span>
-              </div>
-            </div>
-            <div class="scanning-info">
-              <div class="scanning-badge">
-                <span class="scanning-dot"></span>
-                <span id="scanning-status-text">読み取り中...</span>
-              </div>
-              <div class="scanning-progress-track">
-                <div class="scanning-progress-fill" id="scanning-progress-fill"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ===== Step 3: 確認・編集 ===== -->
-        <div class="expense-step" id="expense-confirm">
-          <div class="confirm-header-section">
-            <span class="confirm-badge-anim">✨ 読み取り完了</span>
-            <h1 class="confirm-title">内容を確認してください</h1>
-            <p class="confirm-subtitle">タップで修正できます</p>
-          </div>
-          <div class="confirm-card">
-            <div class="confirm-receipt-col">
-              <div class="confirm-receipt-frame">
-                <img id="confirm-receipt-img" alt="レシート">
-              </div>
-            </div>
-            <div class="confirm-fields-col">
-              <div class="confirm-field" style="--i:0">
-                <label class="confirm-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> 日付</label>
-                <input type="date" id="confirm-date" class="confirm-input">
-              </div>
-              <div class="confirm-field" style="--i:1">
-                <label class="confirm-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><line x1="12" y1="18" x2="12" y2="6"/></svg> 金額</label>
-                <div class="confirm-amount-wrap">
-                  <span class="confirm-yen">¥</span>
-                  <input type="number" id="confirm-amount" class="confirm-input confirm-input-amount" placeholder="0" inputmode="numeric">
-                </div>
-              </div>
-              <div class="confirm-field" style="--i:2">
-                <label class="confirm-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg> 摘要</label>
-                <input type="text" id="confirm-description" class="confirm-input" placeholder="店舗名・内容">
-              </div>
-              <div class="confirm-field confirm-field-category" style="--i:3">
-                <label class="confirm-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg> 勘定科目</label>
-                <div class="confirm-category-grid" id="confirm-category-grid"></div>
-              </div>
-            </div>
-          </div>
-          <div class="confirm-actions">
-            <button type="button" class="btn btn-outline btn-press" id="btn-retake">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-              撮り直す
-            </button>
-            <button type="button" class="btn btn-save-hero btn-press" id="btn-save-expense">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-              保存する
-            </button>
-          </div>
-        </div>
-
-        <!-- ===== Step 4: 保存完了 ===== -->
-        <div class="expense-step" id="expense-success">
-          <div class="success-container">
-            <div class="success-particles" id="success-particles"></div>
-            <div class="success-check-wrap">
-              <svg class="success-checkmark" viewBox="0 0 52 52">
-                <circle class="success-circle" cx="26" cy="26" r="25" fill="none"/>
-                <path class="success-check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
-              </svg>
-            </div>
-            <h2 class="success-title">保存しました！</h2>
-            <p class="success-summary" id="success-summary"></p>
-            <div class="success-actions">
-              <button type="button" class="btn btn-save-hero btn-press" id="btn-capture-another">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                もう1枚撮る
-              </button>
-              <button type="button" class="btn btn-outline btn-press" id="btn-to-dashboard">ダッシュボードへ</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- ===== Step 5: 手動入力フォーム ===== -->
-        <div class="expense-step" id="expense-manual">
-          <div class="view-header">
-            <div>
-              <h1 class="view-title">手動で入力</h1>
-              <p class="view-subtitle"><a href="#" class="link" id="btn-back-to-capture">← レシート撮影に戻る</a></p>
-            </div>
-          </div>
-          <div class="form-card">
-            <form id="form-expense" class="form">
-              <div class="form-group"><label class="form-label" for="expense-date">日付</label><input type="date" id="expense-date" class="form-input" required></div>
-              <div class="form-group"><label class="form-label" for="expense-amount">金額（円）</label><div class="input-with-prefix"><span class="input-prefix">¥</span><input type="number" id="expense-amount" class="form-input" placeholder="0" inputmode="numeric" required></div></div>
-              <div class="form-group">
-                <label class="form-label">勘定科目</label>
-                <div class="category-grid" id="category-grid">
-                  <label class="category-chip"><input type="radio" name="category" value="outsourcing"><span class="chip-content"><span class="chip-emoji">👨‍💻</span>外注工賃</span></label>
-                  <label class="category-chip"><input type="radio" name="category" value="travel"><span class="chip-content"><span class="chip-emoji">🚃</span>旅費交通費</span></label>
-                  <label class="category-chip"><input type="radio" name="category" value="communication"><span class="chip-content"><span class="chip-emoji">📱</span>通信費</span></label>
-                  <label class="category-chip"><input type="radio" name="category" value="supplies"><span class="chip-content"><span class="chip-emoji">🖊️</span>消耗品費</span></label>
-                  <label class="category-chip"><input type="radio" name="category" value="advertising"><span class="chip-content"><span class="chip-emoji">📢</span>広告宣伝費</span></label>
-                  <label class="category-chip"><input type="radio" name="category" value="entertainment"><span class="chip-content"><span class="chip-emoji">🍽️</span>接待交際費</span></label>
-                  <label class="category-chip"><input type="radio" name="category" value="depreciation"><span class="chip-content"><span class="chip-emoji">💻</span>減価償却費</span></label>
-                  <label class="category-chip"><input type="radio" name="category" value="home_office"><span class="chip-content"><span class="chip-emoji">🏠</span>家事按分</span></label>
-                  <label class="category-chip"><input type="radio" name="category" value="fees"><span class="chip-content"><span class="chip-emoji">🏦</span>支払手数料</span></label>
-                  <label class="category-chip"><input type="radio" name="category" value="misc" checked><span class="chip-content"><span class="chip-emoji">📦</span>雑費</span></label>
-                </div>
-              </div>
-              <div class="form-group"><label class="form-label" for="expense-description">摘要</label><input type="text" id="expense-description" class="form-input" placeholder="例: 電車代 渋谷→新宿"></div>
-              <div class="form-group">
-                <label class="form-label">レシート画像（任意）</label>
-                <div class="file-upload-area" id="manual-receipt-area">
-                  <input type="file" id="expense-receipt" accept="image/*" class="file-input">
-                  <div class="file-upload-content"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="upload-icon"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span class="upload-text">画像を添付</span></div>
-                  <div class="file-preview" id="manual-receipt-preview" style="display:none;"><img id="manual-receipt-preview-img" alt="レシート"><button type="button" class="btn-remove-file" id="btn-remove-manual-receipt">&times;</button></div>
-                </div>
-              </div>
-              <button type="submit" class="btn btn-primary btn-lg btn-full btn-press"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> 経費を保存</button>
-            </form>
-          </div>
-        </div>
-
-      </section>
-
-      <!-- 取引履歴ビュー -->
-      <section class="view" id="view-history">
-        <div class="view-header">
-          <div>
-            <h1 class="view-title">取引履歴</h1>
-            <p class="view-subtitle">全ての収入・経費の記録</p>
-          </div>
-        </div>
-
-        <div class="filter-bar">
-          <div class="filter-group">
-            <select id="history-year" class="form-select filter-select"></select>
-            <select id="history-month" class="form-select filter-select">
-              <option value="">全月</option>
-              <option value="1">1月</option><option value="2">2月</option>
-              <option value="3">3月</option><option value="4">4月</option>
-              <option value="5">5月</option><option value="6">6月</option>
-              <option value="7">7月</option><option value="8">8月</option>
-              <option value="9">9月</option><option value="10">10月</option>
-              <option value="11">11月</option><option value="12">12月</option>
-            </select>
-            <select id="history-type" class="form-select filter-select">
-              <option value="">全種別</option>
-              <option value="income">収入</option>
-              <option value="expense">経費</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="transactions-list" id="history-transactions"></div>
-          <div class="empty-state" id="history-empty" style="display:none;">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="empty-icon"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
-            <p>取引データがありません</p>
-          </div>
-        </div>
-      </section>
-
-      <!-- レポートビュー -->
-      <section class="view" id="view-report">
-        <div class="view-header">
-          <div>
-            <h1 class="view-title">年間レポート</h1>
-            <p class="view-subtitle">確定申告に必要な集計データ</p>
-          </div>
-          <div class="view-actions">
-            <select id="report-year" class="form-select"></select>
-          </div>
-        </div>
-
-        <!-- レポートサマリー -->
-        <div class="report-summary" id="report-summary">
-          <div class="report-row report-income">
-            <span class="report-label">総収入</span>
-            <span class="report-value" id="report-total-income">¥0</span>
-          </div>
-          <div class="report-divider"></div>
-          <div class="report-row report-expense">
-            <span class="report-label">総経費</span>
-            <span class="report-value" id="report-total-expense">¥0</span>
-          </div>
-          <div class="report-divider"></div>
-          <div class="report-row report-deduction">
-            <span class="report-label">青色申告特別控除</span>
-            <span class="report-value">¥650,000</span>
-          </div>
-          <div class="report-divider thick"></div>
-          <div class="report-row report-profit">
-            <span class="report-label">課税所得（概算）</span>
-            <span class="report-value" id="report-taxable">¥0</span>
-          </div>
-        </div>
-
-        <!-- 経費内訳 -->
-        <div class="card">
-          <div class="card-header">
-            <h3 class="card-title">経費内訳</h3>
-          </div>
-          <div id="report-breakdown"></div>
-        </div>
-
-        <!-- 月別推移チャート -->
-        <div class="chart-card">
-          <h3 class="chart-title">月別収支推移</h3>
-          <div class="chart-container">
-            <canvas id="chart-report-monthly"></canvas>
-          </div>
-        </div>
-      </section>
-
-      <!-- AI出力ビュー -->
-      <section class="view" id="view-ai-export">
-        <div class="view-header">
-          <div>
-            <h1 class="view-title">AI相談用データ</h1>
-            <p class="view-subtitle">Grok・ChatGPT等に貼り付けて相談できます</p>
-          </div>
-          <div class="view-actions">
-            <select id="ai-year" class="form-select"></select>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="ai-actions">
-            <button class="btn btn-primary" id="btn-generate-ai">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 0-4 4c0 1.5.8 2.8 2 3.4V11h4V9.4c1.2-.7 2-2 2-3.4a4 4 0 0 0-4-4Z"/><path d="M10 11v2a2 2 0 1 0 4 0v-2"/><line x1="12" y1="15" x2="12" y2="19"/><line x1="8" y1="19" x2="16" y2="19"/></svg>
-              データを生成
-            </button>
-            <button class="btn btn-outline" id="btn-copy-ai" style="display:none;">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              クリップボードにコピー
-            </button>
-          </div>
-          <textarea id="ai-output" class="ai-textarea" readonly placeholder="「データを生成」ボタンを押してください..."></textarea>
-        </div>
-      </section>
-    </main>
+      <p class="auth-toggle">
+        <span id="auth-toggle-text">アカウントをお持ちでない方</span>
+        <a href="#" id="auth-toggle-link">新規登録</a>
+      </p>
+    </div>
   </div>
 
-  <!-- モバイルナビゲーション -->
-  <nav class="mobile-nav">
-    <a href="#" class="mobile-nav-item active" data-view="dashboard">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-      <span>ホーム</span>
-    </a>
-    <a href="#" class="mobile-nav-item" data-view="income">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-      <span>収入</span>
-    </a>
-    <a href="#" class="mobile-nav-item mobile-nav-center" data-view="expense">
-      <div class="mobile-nav-center-btn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      </div>
-      <span>経費</span>
-    </a>
-    <a href="#" class="mobile-nav-item" data-view="history">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
-      <span>履歴</span>
-    </a>
-    <a href="#" class="mobile-nav-item" data-view="report">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
-      <span>レポート</span>
-    </a>
-  </nav>
+  <!-- ====== メインアプリ ====== -->
+  <div id="app-screen" class="screen" style="display:none">
 
-  <!-- 編集モーダル -->
-  <div class="modal-overlay" id="modal-overlay">
-    <div class="modal" id="edit-modal">
-      <div class="modal-header">
-        <h3 class="modal-title" id="modal-title">取引を編集</h3>
-        <button class="btn-close" id="modal-close">&times;</button>
-      </div>
-      <form id="form-edit" class="form">
-        <input type="hidden" id="edit-id">
-        <input type="hidden" id="edit-kind">
-        <div class="form-group">
-          <label class="form-label">日付</label>
-          <input type="date" id="edit-date" class="form-input" required>
-        </div>
-        <div class="form-group">
-          <label class="form-label">金額（円）</label>
-          <div class="input-with-prefix">
-            <span class="input-prefix">¥</span>
-            <input type="number" id="edit-amount" class="form-input" required>
+    <!-- トップバー -->
+    <header class="topbar">
+      <button class="book-selector" id="book-selector-btn">
+        <span id="cur-book-emoji">📒</span>
+        <span id="cur-book-name">個人</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="topbar-logo">K</div>
+      <button class="user-btn" id="user-menu-btn"><span id="user-initial">K</span></button>
+    </header>
+
+    <!-- メインコンテンツ -->
+    <main class="app-main">
+
+      <!-- ===== ホーム ===== -->
+      <section class="view active" id="view-home">
+        <div class="home-summary">
+          <div class="summary-item expense">
+            <span class="summary-label">今月の経費</span>
+            <span class="summary-value" id="home-expense">¥0</span>
+          </div>
+          <div class="summary-item income">
+            <span class="summary-label">今月の収入</span>
+            <span class="summary-value" id="home-income">¥0</span>
           </div>
         </div>
-        <div class="form-group" id="edit-category-group" style="display:none;">
-          <label class="form-label">科目</label>
-          <select id="edit-category" class="form-select">
-            <option value="outsourcing">外注工賃</option>
-            <option value="travel">旅費交通費</option>
-            <option value="communication">通信費</option>
-            <option value="supplies">消耗品費</option>
-            <option value="advertising">広告宣伝費</option>
-            <option value="entertainment">接待交際費</option>
-            <option value="depreciation">減価償却費</option>
-            <option value="home_office">家事按分</option>
-            <option value="fees">支払手数料</option>
-            <option value="misc">雑費</option>
+
+        <!-- レシート撮影ヒーロー -->
+        <label class="capture-hero" for="receipt-input">
+          <input type="file" id="receipt-input" accept="image/*" capture="environment" class="sr-only">
+          <div class="capture-hero-glow"></div>
+          <div class="capture-hero-inner">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+            <span>レシートを撮影</span>
+          </div>
+        </label>
+
+        <div class="sub-actions">
+          <button class="btn-sub" id="btn-add-income">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            収入
+          </button>
+          <button class="btn-sub" id="btn-add-manual">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            手動経費
+          </button>
+        </div>
+
+        <div class="section-head">
+          <h2>最近の取引</h2>
+          <button class="link-btn" id="btn-view-all">すべて見る</button>
+        </div>
+        <div class="tx-list" id="home-transactions"></div>
+        <div class="empty-msg" id="home-empty" style="display:none">まだ取引がありません</div>
+      </section>
+
+      <!-- ===== レポート ===== -->
+      <section class="view" id="view-report">
+        <div class="view-head">
+          <h1>レポート</h1>
+          <select id="report-year" class="sel-year"></select>
+        </div>
+        <div class="report-summary">
+          <div class="rpt-row"><span>総収入</span><span class="rpt-val income" id="rpt-income">¥0</span></div>
+          <div class="rpt-div"></div>
+          <div class="rpt-row"><span>総経費</span><span class="rpt-val expense" id="rpt-expense">¥0</span></div>
+          <div class="rpt-div"></div>
+          <div class="rpt-row"><span>青色控除</span><span class="rpt-val">¥650,000</span></div>
+          <div class="rpt-div thick"></div>
+          <div class="rpt-row bold"><span>課税所得</span><span class="rpt-val primary" id="rpt-taxable">¥0</span></div>
+        </div>
+        <div class="card"><h3 class="card-title">経費内訳</h3><div id="rpt-breakdown"></div></div>
+        <div class="card"><h3 class="card-title">月別推移</h3><div class="chart-wrap"><canvas id="chart-report"></canvas></div></div>
+        <div class="card">
+          <h3 class="card-title">AI相談用データ</h3>
+          <button class="btn-primary btn-sm" id="btn-ai-gen">データを生成</button>
+          <textarea id="ai-output" class="ai-textarea" readonly placeholder="「データを生成」を押してください"></textarea>
+          <button class="btn-outline btn-sm" id="btn-ai-copy" style="display:none">コピー</button>
+        </div>
+      </section>
+
+      <!-- ===== 設定 ===== -->
+      <section class="view" id="view-settings">
+        <div class="view-head"><h1>設定</h1></div>
+
+        <div class="card">
+          <h3 class="card-title">帳簿管理</h3>
+          <p class="card-desc">個人・会社など用途別に帳簿を分けて管理できます</p>
+          <div id="book-list" class="book-list"></div>
+          <button class="btn-outline btn-full" id="btn-add-book">+ 帳簿を追加</button>
+        </div>
+
+        <div class="card">
+          <h3 class="card-title">CSV取込</h3>
+          <p class="card-desc">クレジットカード明細を現在の帳簿に取り込みます</p>
+          <button class="btn-outline btn-full" id="btn-csv-open">CSVファイルを選択</button>
+        </div>
+
+        <div class="card">
+          <h3 class="card-title">バックアップ</h3>
+          <button class="btn-outline btn-full" id="btn-backup">データをエクスポート</button>
+        </div>
+
+        <button class="btn-danger btn-full" id="btn-logout">ログアウト</button>
+      </section>
+
+      <!-- ===== 取引一覧 (すべて見る) ===== -->
+      <section class="view" id="view-history">
+        <div class="view-head">
+          <h1>取引履歴</h1>
+          <button class="link-btn" id="btn-back-home">← ホーム</button>
+        </div>
+        <div class="filter-bar">
+          <select id="hist-year" class="sel-sm"></select>
+          <select id="hist-month" class="sel-sm">
+            <option value="">全月</option>
+            <option value="1">1月</option><option value="2">2月</option><option value="3">3月</option><option value="4">4月</option>
+            <option value="5">5月</option><option value="6">6月</option><option value="7">7月</option><option value="8">8月</option>
+            <option value="9">9月</option><option value="10">10月</option><option value="11">11月</option><option value="12">12月</option>
+          </select>
+          <select id="hist-type" class="sel-sm">
+            <option value="">全種別</option><option value="income">収入</option><option value="expense">経費</option>
           </select>
         </div>
-        <div class="form-group">
-          <label class="form-label">摘要</label>
-          <input type="text" id="edit-description" class="form-input">
+        <div class="tx-list" id="hist-transactions"></div>
+        <div class="empty-msg" id="hist-empty" style="display:none">データがありません</div>
+      </section>
+    </main>
+
+    <!-- ボトムナビ -->
+    <nav class="bottom-nav">
+      <button class="bnav-item active" data-view="home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        <span>ホーム</span>
+      </button>
+      <button class="bnav-item" data-view="report">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        <span>レポート</span>
+      </button>
+      <button class="bnav-item" data-view="settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>設定</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- ====== オーバーレイ群 ====== -->
+
+  <!-- OCRスキャン -->
+  <div class="overlay" id="overlay-scanning" style="display:none">
+    <div class="scan-wrap">
+      <div class="scan-img-wrap"><img id="scan-img" alt=""><div class="scan-line"></div><div class="scan-corners"><span class="sc tl"></span><span class="sc tr"></span><span class="sc bl"></span><span class="sc br"></span></div></div>
+      <div class="scan-info"><div class="scan-badge"><span class="scan-dot"></span><span id="scan-status">読み取り中...</span></div><div class="scan-progress"><div class="scan-progress-fill" id="scan-progress-fill"></div></div></div>
+    </div>
+  </div>
+
+  <!-- 確認画面 -->
+  <div class="overlay" id="overlay-confirm" style="display:none">
+    <div class="confirm-sheet">
+      <div class="confirm-head"><span class="confirm-badge">✨ 読み取り完了</span><h2>内容を確認</h2></div>
+      <div class="confirm-body">
+        <div class="confirm-thumb-wrap"><img id="confirm-img" alt=""></div>
+        <div class="confirm-fields">
+          <div class="cf" style="--i:0"><label>日付</label><input type="date" id="cf-date" class="cf-input"></div>
+          <div class="cf" style="--i:1"><label>金額</label><div class="cf-amt"><span>¥</span><input type="number" id="cf-amount" class="cf-input cf-input-big" placeholder="0" inputmode="numeric"></div></div>
+          <div class="cf" style="--i:2"><label>摘要</label><input type="text" id="cf-desc" class="cf-input" placeholder="店舗名・内容"></div>
+          <div class="cf cf-cat-field" style="--i:3"><label>勘定科目</label><div class="cf-cats" id="cf-cats"></div></div>
         </div>
-        <div class="modal-actions">
-          <button type="button" class="btn btn-danger" id="btn-delete-transaction">削除</button>
-          <button type="submit" class="btn btn-primary">保存</button>
-        </div>
+      </div>
+      <div class="confirm-actions">
+        <button class="btn-outline" id="btn-cf-retake">撮り直す</button>
+        <button class="btn-save" id="btn-cf-save">保存する</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 成功 -->
+  <div class="overlay" id="overlay-success" style="display:none">
+    <div class="success-sheet">
+      <div class="success-particles" id="success-particles"></div>
+      <div class="success-check-wrap"><svg class="success-checkmark" viewBox="0 0 52 52"><circle class="success-circle" cx="26" cy="26" r="25" fill="none"/><path class="success-path" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/></svg></div>
+      <h2 class="success-title">保存しました！</h2>
+      <p class="success-summary" id="success-summary"></p>
+      <div class="success-actions">
+        <button class="btn-save" id="btn-ss-another">もう1枚撮る</button>
+        <button class="btn-outline" id="btn-ss-home">ホームへ</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 収入入力モーダル -->
+  <div class="overlay" id="overlay-income" style="display:none">
+    <div class="modal-sheet">
+      <div class="modal-head"><h3>収入を記録</h3><button class="btn-close" id="close-income">&times;</button></div>
+      <form id="form-income" class="modal-form">
+        <div class="fg"><label>日付</label><input type="date" id="inc-date" class="fi" required></div>
+        <div class="fg"><label>金額</label><div class="fi-amt"><span>¥</span><input type="number" id="inc-amount" class="fi" placeholder="0" inputmode="numeric" required></div></div>
+        <div class="fg"><label>種類</label><select id="inc-type" class="fi"><option value="振込">振込</option><option value="現金">現金</option><option value="その他">その他</option></select></div>
+        <div class="fg"><label>摘要</label><input type="text" id="inc-desc" class="fi" placeholder="例: ○○株式会社 報酬"></div>
+        <button type="submit" class="btn-save btn-full">保存</button>
       </form>
     </div>
   </div>
 
-  <!-- CSV インポートモーダル（プレビュー機能付き） -->
-  <div class="modal-overlay" id="csv-modal-overlay">
-    <div class="modal csv-modal-wide" id="csv-modal">
-      <div class="modal-header">
-        <h3 class="modal-title" id="csv-modal-title">CSVファイルを取り込む</h3>
-        <button class="btn-close" id="csv-modal-close">&times;</button>
-      </div>
+  <!-- 手動経費モーダル -->
+  <div class="overlay" id="overlay-manual" style="display:none">
+    <div class="modal-sheet">
+      <div class="modal-head"><h3>経費を手動入力</h3><button class="btn-close" id="close-manual">&times;</button></div>
+      <form id="form-manual-expense" class="modal-form">
+        <div class="fg"><label>日付</label><input type="date" id="me-date" class="fi" required></div>
+        <div class="fg"><label>金額</label><div class="fi-amt"><span>¥</span><input type="number" id="me-amount" class="fi" placeholder="0" inputmode="numeric" required></div></div>
+        <div class="fg"><label>摘要</label><input type="text" id="me-desc" class="fi" placeholder="例: 電車代"></div>
+        <div class="fg"><label>勘定科目</label><div class="cat-grid" id="me-cats"></div></div>
+        <button type="submit" class="btn-save btn-full">保存</button>
+      </form>
+    </div>
+  </div>
 
-      <!-- ステップ1: ファイル選択 -->
-      <div id="csv-step-upload" class="form">
-        <p class="text-muted" style="margin-bottom: 1rem;">クレジットカード明細のCSVファイルをアップロードしてください。<br>科目は自動で推定されます。</p>
-        <div class="file-upload-area" id="csv-upload-area">
-          <input type="file" id="csv-file" accept=".csv" class="file-input">
-          <div class="file-upload-content">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="upload-icon"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
-            <span class="upload-text">CSVファイルを選択</span>
-            <span class="upload-hint">楽天・三井住友・Amazon等に対応</span>
+  <!-- 編集モーダル -->
+  <div class="overlay" id="overlay-edit" style="display:none">
+    <div class="modal-sheet">
+      <div class="modal-head"><h3 id="edit-title">取引を編集</h3><button class="btn-close" id="close-edit">&times;</button></div>
+      <form id="form-edit" class="modal-form">
+        <input type="hidden" id="edit-id"><input type="hidden" id="edit-kind">
+        <div class="fg"><label>日付</label><input type="date" id="edit-date" class="fi" required></div>
+        <div class="fg"><label>金額</label><div class="fi-amt"><span>¥</span><input type="number" id="edit-amount" class="fi" required></div></div>
+        <div class="fg" id="edit-cat-group" style="display:none"><label>科目</label><select id="edit-category" class="fi"></select></div>
+        <div class="fg"><label>摘要</label><input type="text" id="edit-desc" class="fi"></div>
+        <div class="modal-btns"><button type="button" class="btn-danger" id="btn-edit-delete">削除</button><button type="submit" class="btn-save">保存</button></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 帳簿追加モーダル -->
+  <div class="overlay" id="overlay-add-book" style="display:none">
+    <div class="modal-sheet modal-sm">
+      <div class="modal-head"><h3>帳簿を追加</h3><button class="btn-close" id="close-add-book">&times;</button></div>
+      <form id="form-add-book" class="modal-form">
+        <div class="fg"><label>帳簿名</label><input type="text" id="book-name" class="fi" placeholder="例: 会社A" required></div>
+        <div class="fg"><label>アイコン</label>
+          <div class="emoji-picker" id="emoji-picker">
+            <span class="ep selected" data-e="📒">📒</span><span class="ep" data-e="👤">👤</span><span class="ep" data-e="🏢">🏢</span><span class="ep" data-e="💼">💼</span><span class="ep" data-e="🏠">🏠</span><span class="ep" data-e="🎨">🎨</span><span class="ep" data-e="💡">💡</span><span class="ep" data-e="🚀">🚀</span>
           </div>
         </div>
-        <div class="csv-loading" id="csv-loading" style="display:none;">
-          <div class="ocr-spinner"></div>
-          <span>CSVを解析中...</span>
-        </div>
-      </div>
+        <button type="submit" class="btn-save btn-full">作成</button>
+      </form>
+    </div>
+  </div>
 
-      <!-- ステップ2: プレビュー＆編集 -->
-      <div id="csv-step-preview" style="display:none;">
-        <div class="csv-preview-header">
-          <span class="csv-preview-count" id="csv-preview-count"></span>
-          <button class="btn btn-outline btn-sm" id="csv-back-btn">← ファイル再選択</button>
-        </div>
-        <div class="csv-preview-table-wrap">
-          <table class="csv-preview-table">
-            <thead>
-              <tr>
-                <th class="csv-th-check"><input type="checkbox" id="csv-check-all" checked></th>
-                <th>日付</th>
-                <th>金額</th>
-                <th>摘要</th>
-                <th>科目</th>
-              </tr>
-            </thead>
-            <tbody id="csv-preview-body"></tbody>
-          </table>
-        </div>
-        <div class="csv-preview-actions">
-          <span class="csv-selected-count" id="csv-selected-count"></span>
-          <button class="btn btn-primary" id="btn-import-csv">選択した項目を登録</button>
-        </div>
+  <!-- 帳簿選択モーダル -->
+  <div class="overlay" id="overlay-book-select" style="display:none">
+    <div class="modal-sheet modal-sm">
+      <div class="modal-head"><h3>帳簿を選択</h3><button class="btn-close" id="close-book-select">&times;</button></div>
+      <div id="book-select-list" class="book-select-list"></div>
+    </div>
+  </div>
+
+  <!-- CSV取込モーダル -->
+  <div class="overlay" id="overlay-csv" style="display:none">
+    <div class="modal-sheet modal-wide">
+      <div class="modal-head"><h3 id="csv-title">CSV取込</h3><button class="btn-close" id="close-csv">&times;</button></div>
+      <div id="csv-step-upload">
+        <p class="card-desc">クレジットカード明細CSVを選択してください</p>
+        <div class="file-area"><input type="file" id="csv-file" accept=".csv" class="sr-only"><label for="csv-file" class="file-label">CSVファイルを選択</label></div>
+        <div class="csv-loading" id="csv-loading" style="display:none"><div class="spinner"></div><span>解析中...</span></div>
+      </div>
+      <div id="csv-step-preview" style="display:none">
+        <div class="csv-head"><span id="csv-count"></span><button class="link-btn" id="csv-back">← 再選択</button></div>
+        <div class="csv-table-wrap"><table class="csv-table"><thead><tr><th class="csv-th-ck"><input type="checkbox" id="csv-check-all" checked></th><th>日付</th><th>金額</th><th>摘要</th><th>科目</th></tr></thead><tbody id="csv-tbody"></tbody></table></div>
+        <div class="csv-foot"><span id="csv-selected"></span><button class="btn-save" id="btn-csv-import">登録</button></div>
       </div>
     </div>
   </div>
 
-  <!-- サイドバーオーバーレイ（モバイル） -->
-  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+  <!-- ユーザーメニュー -->
+  <div class="overlay" id="overlay-user-menu" style="display:none">
+    <div class="modal-sheet modal-sm">
+      <div class="modal-head"><h3 id="user-menu-name">ユーザー</h3><button class="btn-close" id="close-user-menu">&times;</button></div>
+      <p class="card-desc" id="user-menu-email"></p>
+      <button class="btn-danger btn-full" id="btn-logout2" style="margin-top:12px">ログアウト</button>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

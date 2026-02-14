@@ -3,6 +3,9 @@ const Database = require('better-sqlite3');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const bcrypt = require('bcryptjs');
+const cookieParser = require('cookie-parser');
+const crypto = require('crypto');
 
 const app = express();
 const router = express.Router();
@@ -13,556 +16,467 @@ const PORT = process.env.PORT || 3001;
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
-// データベース初期化
+// DB初期化
 const db = new Database('./data/database.sqlite');
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
+// === マイグレーション: 旧スキーマ対応 ===
+try {
+  // 旧テーブルにbook_idが無い場合は削除して再作成
+  const cols = db.prepare("PRAGMA table_info(income)").all();
+  if (cols.length > 0 && !cols.find(c => c.name === 'book_id')) {
+    console.log('⚡ 旧スキーマを検出、テーブルを再構築します...');
+    db.exec('DROP TABLE IF EXISTS income');
+    db.exec('DROP TABLE IF EXISTS expenses');
+  }
+} catch (e) { /* テーブルが存在しない場合は無視 */ }
+
+// === テーブル作成 ===
 db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+  );
+  CREATE TABLE IF NOT EXISTS sessions (
+    token TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    expires_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE TABLE IF NOT EXISTS books (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    emoji TEXT DEFAULT '📒',
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
   CREATE TABLE IF NOT EXISTS income (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    book_id INTEGER NOT NULL,
     date TEXT NOT NULL,
     amount INTEGER NOT NULL,
     type TEXT NOT NULL DEFAULT '振込',
     description TEXT,
-    created_at TEXT DEFAULT (datetime('now', 'localtime')),
-    updated_at TEXT DEFAULT (datetime('now', 'localtime'))
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    updated_at TEXT DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
   );
-
   CREATE TABLE IF NOT EXISTS expenses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    book_id INTEGER NOT NULL,
     date TEXT NOT NULL,
     amount INTEGER NOT NULL,
     category TEXT NOT NULL,
     description TEXT,
     receipt_path TEXT,
     source TEXT DEFAULT 'manual',
-    created_at TEXT DEFAULT (datetime('now', 'localtime')),
-    updated_at TEXT DEFAULT (datetime('now', 'localtime'))
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    updated_at TEXT DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
   );
 `);
 
 // ファイルアップロード設定
 const storage = multer.diskStorage({
   destination: './uploads/',
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `receipt_${Date.now()}${ext}`);
-  }
+  filename: (req, file, cb) => cb(null, `receipt_${Date.now()}${path.extname(file.originalname)}`)
 });
 const upload = multer({
-  storage,
-  limits: { fileSize: 10 * 1024 * 1024 },
+  storage, limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    const allowed = /jpeg|jpg|png|gif|webp|heic/;
-    const ext = allowed.test(path.extname(file.originalname).toLowerCase());
-    const mime = allowed.test(file.mimetype);
-    cb(null, ext || mime);
+    const ok = /jpeg|jpg|png|gif|webp|heic|csv/.test(path.extname(file.originalname).toLowerCase());
+    cb(null, ok);
   }
 });
 
-// === ルーターにミドルウェアとルート定義 ===
-router.use(express.json());
+// === ミドルウェア ===
+router.use(express.json({ limit: '10mb' }));
+router.use(cookieParser());
 router.use(express.static(path.join(__dirname, 'public')));
 router.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// === 収入 API ===
+// 認証ミドルウェア
+function auth(req, res, next) {
+  const token = req.cookies.session;
+  if (!token) return res.status(401).json({ error: '未認証' });
+  const session = db.prepare('SELECT user_id FROM sessions WHERE token = ? AND expires_at > datetime(\'now\',\'localtime\')').get(token);
+  if (!session) return res.status(401).json({ error: 'セッション期限切れ' });
+  req.userId = session.user_id;
+  next();
+}
 
-// 収入追加
-router.post('/api/income', (req, res) => {
-  try {
-    const { date, amount, type, description } = req.body;
-    if (!date || !amount) return res.status(400).json({ error: '日付と金額は必須です' });
+// 帳簿アクセス確認
+function bookAccess(req) {
+  const bookId = parseInt(req.query.bookId || req.body.bookId);
+  if (!bookId) return null;
+  const book = db.prepare('SELECT * FROM books WHERE id = ? AND user_id = ?').get(bookId, req.userId);
+  return book || null;
+}
 
-    const stmt = db.prepare(
-      'INSERT INTO income (date, amount, type, description) VALUES (?, ?, ?, ?)'
-    );
-    const result = stmt.run(date, parseInt(amount), type || '振込', description || '');
-    res.json({ id: result.lastInsertRowid, success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 収入一覧
-router.get('/api/income', (req, res) => {
-  try {
-    const { year, month } = req.query;
-    let sql = 'SELECT * FROM income';
-    const params = [];
-
-    if (year) {
-      sql += " WHERE strftime('%Y', date) = ?";
-      params.push(year);
-      if (month) {
-        sql += " AND strftime('%m', date) = ?";
-        params.push(month.padStart(2, '0'));
-      }
-    }
-    sql += ' ORDER BY date DESC, id DESC';
-
-    const rows = db.prepare(sql).all(...params);
-    res.json(rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 収入更新
-router.put('/api/income/:id', (req, res) => {
-  try {
-    const { date, amount, type, description } = req.body;
-    const stmt = db.prepare(
-      "UPDATE income SET date=?, amount=?, type=?, description=?, updated_at=datetime('now','localtime') WHERE id=?"
-    );
-    stmt.run(date, parseInt(amount), type, description, req.params.id);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 収入削除
-router.delete('/api/income/:id', (req, res) => {
-  try {
-    db.prepare('DELETE FROM income WHERE id = ?').run(req.params.id);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// === 経費 API ===
-
-// 経費追加
-router.post('/api/expense', upload.single('receipt'), (req, res) => {
-  try {
-    const { date, amount, category, description, source } = req.body;
-    if (!date || !amount || !category) {
-      return res.status(400).json({ error: '日付、金額、科目は必須です' });
-    }
-
-    const receiptPath = req.file ? `/uploads/${req.file.filename}` : null;
-    const stmt = db.prepare(
-      'INSERT INTO expenses (date, amount, category, description, receipt_path, source) VALUES (?, ?, ?, ?, ?, ?)'
-    );
-    const result = stmt.run(
-      date, parseInt(amount), category, description || '', receiptPath, source || 'manual'
-    );
-    res.json({ id: result.lastInsertRowid, success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 経費一覧
-router.get('/api/expenses', (req, res) => {
-  try {
-    const { year, month, category } = req.query;
-    let sql = 'SELECT * FROM expenses';
-    const conditions = [];
-    const params = [];
-
-    if (year) {
-      conditions.push("strftime('%Y', date) = ?");
-      params.push(year);
-    }
-    if (month) {
-      conditions.push("strftime('%m', date) = ?");
-      params.push(month.padStart(2, '0'));
-    }
-    if (category) {
-      conditions.push('category = ?');
-      params.push(category);
-    }
-
-    if (conditions.length > 0) {
-      sql += ' WHERE ' + conditions.join(' AND ');
-    }
-    sql += ' ORDER BY date DESC, id DESC';
-
-    const rows = db.prepare(sql).all(...params);
-    res.json(rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 経費更新
-router.put('/api/expense/:id', (req, res) => {
-  try {
-    const { date, amount, category, description } = req.body;
-    const stmt = db.prepare(
-      "UPDATE expenses SET date=?, amount=?, category=?, description=?, updated_at=datetime('now','localtime') WHERE id=?"
-    );
-    stmt.run(date, parseInt(amount), category, description, req.params.id);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 経費削除
-router.delete('/api/expense/:id', (req, res) => {
-  try {
-    const expense = db.prepare('SELECT receipt_path FROM expenses WHERE id = ?').get(req.params.id);
-    if (expense && expense.receipt_path) {
-      const filePath = path.join(__dirname, expense.receipt_path);
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    }
-    db.prepare('DELETE FROM expenses WHERE id = ?').run(req.params.id);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// === 集計 API ===
-
-// 年間サマリー
-router.get('/api/summary/:year', (req, res) => {
-  try {
-    const year = req.params.year;
-
-    const incomeTotal = db.prepare(
-      "SELECT COALESCE(SUM(amount), 0) as total FROM income WHERE strftime('%Y', date) = ?"
-    ).get(year);
-
-    const expenseTotal = db.prepare(
-      "SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE strftime('%Y', date) = ?"
-    ).get(year);
-
-    const breakdown = db.prepare(
-      "SELECT category, SUM(amount) as total, COUNT(*) as count FROM expenses WHERE strftime('%Y', date) = ? GROUP BY category ORDER BY total DESC"
-    ).all(year);
-
-    const monthlyIncome = db.prepare(
-      "SELECT strftime('%m', date) as month, SUM(amount) as total FROM income WHERE strftime('%Y', date) = ? GROUP BY strftime('%m', date) ORDER BY month"
-    ).all(year);
-
-    const monthlyExpense = db.prepare(
-      "SELECT strftime('%m', date) as month, SUM(amount) as total FROM expenses WHERE strftime('%Y', date) = ? GROUP BY strftime('%m', date) ORDER BY month"
-    ).all(year);
-
-    res.json({
-      year,
-      income: incomeTotal.total,
-      expenses: expenseTotal.total,
-      profit: incomeTotal.total - expenseTotal.total,
-      breakdown,
-      monthlyIncome,
-      monthlyExpense
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ダッシュボード（今月・今年の概要）
-router.get('/api/dashboard', (req, res) => {
-  try {
-    const now = new Date();
-    const year = now.getFullYear().toString();
-    const month = (now.getMonth() + 1).toString().padStart(2, '0');
-
-    const yearIncome = db.prepare(
-      "SELECT COALESCE(SUM(amount), 0) as total FROM income WHERE strftime('%Y', date) = ?"
-    ).get(year);
-    const yearExpense = db.prepare(
-      "SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE strftime('%Y', date) = ?"
-    ).get(year);
-
-    const monthIncome = db.prepare(
-      "SELECT COALESCE(SUM(amount), 0) as total FROM income WHERE strftime('%Y', date) = ? AND strftime('%m', date) = ?"
-    ).get(year, month);
-    const monthExpense = db.prepare(
-      "SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE strftime('%Y', date) = ? AND strftime('%m', date) = ?"
-    ).get(year, month);
-
-    const recentIncome = db.prepare(
-      "SELECT id, date, amount, type as category, description, 'income' as kind, created_at FROM income ORDER BY date DESC, id DESC LIMIT 10"
-    ).all();
-    const recentExpenses = db.prepare(
-      "SELECT id, date, amount, category, description, 'expense' as kind, created_at FROM expenses ORDER BY date DESC, id DESC LIMIT 10"
-    ).all();
-    const recentTransactions = [...recentIncome, ...recentExpenses]
-      .sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : 0))
-      .slice(0, 10);
-
-    const categoryBreakdown = db.prepare(
-      "SELECT category, SUM(amount) as total FROM expenses WHERE strftime('%Y', date) = ? GROUP BY category ORDER BY total DESC"
-    ).all(year);
-
-    const monthlyTrend = db.prepare(`
-      SELECT m.month,
-        COALESCE(i.total, 0) as income,
-        COALESCE(e.total, 0) as expense
-      FROM (
-        SELECT '01' as month UNION SELECT '02' UNION SELECT '03' UNION SELECT '04'
-        UNION SELECT '05' UNION SELECT '06' UNION SELECT '07' UNION SELECT '08'
-        UNION SELECT '09' UNION SELECT '10' UNION SELECT '11' UNION SELECT '12'
-      ) m
-      LEFT JOIN (
-        SELECT strftime('%m', date) as month, SUM(amount) as total
-        FROM income WHERE strftime('%Y', date) = ? GROUP BY strftime('%m', date)
-      ) i ON m.month = i.month
-      LEFT JOIN (
-        SELECT strftime('%m', date) as month, SUM(amount) as total
-        FROM expenses WHERE strftime('%Y', date) = ? GROUP BY strftime('%m', date)
-      ) e ON m.month = e.month
-      ORDER BY m.month
-    `).all(year, year);
-
-    res.json({
-      year: parseInt(year),
-      month: parseInt(month),
-      yearIncome: yearIncome.total,
-      yearExpense: yearExpense.total,
-      yearProfit: yearIncome.total - yearExpense.total,
-      monthIncome: monthIncome.total,
-      monthExpense: monthExpense.total,
-      recentTransactions,
-      categoryBreakdown,
-      monthlyTrend
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// === AI フォーマット出力 ===
-router.get('/api/ai-format/:year', (req, res) => {
-  try {
-    const year = req.params.year;
-
-    const income = db.prepare(
-      "SELECT COALESCE(SUM(amount), 0) as total FROM income WHERE strftime('%Y', date) = ?"
-    ).get(year);
-
-    const expenses = db.prepare(
-      "SELECT category, SUM(amount) as total FROM expenses WHERE strftime('%Y', date) = ? GROUP BY category ORDER BY total DESC"
-    ).all(year);
-
-    const expenseTotal = db.prepare(
-      "SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE strftime('%Y', date) = ?"
-    ).get(year);
-
-    const categoryNames = {
-      outsourcing: '外注工賃',
-      travel: '旅費交通費',
-      communication: '通信費',
-      supplies: '消耗品費',
-      advertising: '広告宣伝費',
-      entertainment: '接待交際費',
-      depreciation: '減価償却費',
-      home_office: '家事按分',
-      fees: '支払手数料',
-      misc: '雑費'
-    };
-
-    const incomeTotal = income.total;
-    const expenseSum = expenseTotal.total;
-    const blueDeduction = 650000;
-    const taxableIncome = incomeTotal - expenseSum - blueDeduction;
-
-    let text = `【${year}年分 確定申告データまとめ】\n\n`;
-    text += `期間: ${year}/01/01 - ${year}/12/31\n`;
-    text += `総収入: ${incomeTotal.toLocaleString()}円\n`;
-    text += `総経費: ${expenseSum.toLocaleString()}円\n\n`;
-    text += `【経費内訳】\n`;
-
-    expenses.forEach(item => {
-      const name = categoryNames[item.category] || item.category;
-      text += `  ${name}: ${item.total.toLocaleString()}円\n`;
-    });
-
-    text += `\n【控除・所得】\n`;
-    text += `  青色申告特別控除: ${blueDeduction.toLocaleString()}円（65万円控除想定）\n`;
-    text += `  課税所得目安: ${Math.max(0, taxableIncome).toLocaleString()}円\n\n`;
-    text += `【質問・コメント】\n`;
-    text += `  ここに質問を記入してください\n`;
-
-    res.json({
-      text,
-      data: {
-        income: incomeTotal,
-        expenses: expenseSum,
-        taxableIncome: Math.max(0, taxableIncome),
-        breakdown: expenses
-      }
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// === 科目自動推定ロジック ===
+// === 科目自動推定 ===
 const categoryKeywords = {
-  travel: ['交通', '電車', 'JR', 'Suica', 'PASMO', 'タクシー', 'バス', '新幹線', 'ANA', 'JAL', '航空', '高速', 'ETC', 'ガソリン', '駐車', '鉄道', 'きっぷ', '空港', 'エクスプレス', 'uber', 'Uber'],
-  communication: ['通信', '電話', '携帯', 'ソフトバンク', 'au', 'docomo', 'NTT', 'インターネット', 'WiFi', 'AWS', 'さくら', 'サーバー', 'ドメイン', 'Xserver', 'ConoHa', 'Zoom', 'Slack', 'Google Cloud', 'Azure', 'Heroku', 'Vercel'],
-  supplies: ['Amazon', 'アマゾン', 'ヨドバシ', 'ビックカメラ', '文具', '事務', 'コピー', '用紙', 'インク', 'トナー', '100均', 'ダイソー', 'セリア', 'ホームセンター', 'コーナン', 'カインズ', 'ニトリ', 'IKEA', '消耗品', 'USB', 'ケーブル', '電池', '文房具', 'LOFT', '東急ハンズ', 'ハンズ'],
-  advertising: ['広告', 'Google Ads', 'Facebook', 'Instagram', 'Twitter', '宣伝', 'チラシ', '印刷', 'PR', 'マーケティング', 'SEO', 'Yahoo', 'LINE広告', 'TikTok'],
-  entertainment: ['飲食', '居酒屋', 'レストラン', '食事', 'ランチ', 'ディナー', '会食', '懇親', '接待', 'カフェ', 'スターバックス', 'Starbucks', 'タリーズ', 'ドトール', 'マクドナルド', 'McDonald', 'ガスト', 'サイゼリヤ', 'すき家', '吉野家', '松屋', 'コンビニ', 'セブン', 'ファミリーマート', 'ローソン', '弁当', 'ウーバーイーツ', 'UberEats', '出前館'],
-  outsourcing: ['外注', '業務委託', 'ランサーズ', 'クラウドワークス', 'ココナラ', 'Fiverr', 'Upwork', 'デザイン料', '開発費', '翻訳'],
-  fees: ['振込手数料', '手数料', 'PayPal', 'Stripe', '決済', '銀行', 'ATM', '送金', 'カード年会費', '年会費'],
-  home_office: ['電気', 'ガス', '水道', '家賃', '光熱'],
-  depreciation: ['パソコン', 'PC', 'Mac', 'MacBook', 'iPhone', 'iPad', 'カメラ', 'ディスプレイ', 'モニター', 'プリンター']
+  travel: ['交通','電車','JR','Suica','PASMO','タクシー','バス','新幹線','ANA','JAL','航空','高速','ETC','ガソリン','駐車','鉄道','Uber'],
+  communication: ['通信','電話','携帯','ソフトバンク','au','docomo','NTT','WiFi','AWS','サーバー','ドメイン','Zoom','Slack','Vercel','Heroku'],
+  supplies: ['Amazon','アマゾン','ヨドバシ','ビックカメラ','文具','事務','コピー','用紙','インク','100均','ダイソー','ニトリ','IKEA','消耗品','LOFT','ハンズ'],
+  advertising: ['広告','Google Ads','Facebook','Instagram','Twitter','宣伝','チラシ','印刷','PR','SEO'],
+  entertainment: ['飲食','居酒屋','レストラン','食事','ランチ','ディナー','会食','接待','カフェ','スターバックス','タリーズ','ドトール','マクドナルド','ガスト','コンビニ','セブン','ファミリーマート','ローソン','弁当'],
+  outsourcing: ['外注','業務委託','ランサーズ','クラウドワークス','ココナラ','デザイン料','開発費'],
+  fees: ['振込手数料','手数料','PayPal','Stripe','決済','銀行','ATM','送金','年会費'],
+  home_office: ['電気','ガス','水道','家賃','光熱'],
+  depreciation: ['パソコン','PC','Mac','MacBook','iPhone','iPad','カメラ','ディスプレイ','モニター','プリンター']
 };
 
-function suggestCategory(description) {
-  if (!description) return 'misc';
-  const desc = description.toLowerCase();
-  for (const [category, keywords] of Object.entries(categoryKeywords)) {
-    for (const keyword of keywords) {
-      if (desc.includes(keyword.toLowerCase())) {
-        return category;
-      }
-    }
+function suggestCategory(desc) {
+  if (!desc) return 'misc';
+  const d = desc.toLowerCase();
+  for (const [cat, kws] of Object.entries(categoryKeywords)) {
+    for (const kw of kws) { if (d.includes(kw.toLowerCase())) return cat; }
   }
   return 'misc';
 }
 
-// 日付フォーマット正規化
-function normalizeDate(dateStr) {
-  if (!dateStr) return '';
-  // すでに YYYY-MM-DD 形式
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
-  // YYYY/MM/DD
-  const slash = dateStr.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
-  if (slash) return `${slash[1]}-${slash[2].padStart(2,'0')}-${slash[3].padStart(2,'0')}`;
-  // 和暦 R6 → 2024 etc.
-  const wareki = dateStr.match(/[RＲ令](\d{1,2})[\.\/年](\d{1,2})[\.\/月](\d{1,2})/);
-  if (wareki) {
-    const year = 2018 + parseInt(wareki[1]);
-    return `${year}-${wareki[2].padStart(2,'0')}-${wareki[3].padStart(2,'0')}`;
-  }
-  // MM/DD/YYYY or DD/MM/YYYY (try best)
-  const mdy = dateStr.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
-  if (mdy) return `${mdy[3]}-${mdy[1].padStart(2,'0')}-${mdy[2].padStart(2,'0')}`;
-  // 2024年1月15日
-  const jpDate = dateStr.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
-  if (jpDate) return `${jpDate[1]}-${jpDate[2].padStart(2,'0')}-${jpDate[3].padStart(2,'0')}`;
-  return dateStr;
+function normalizeDate(s) {
+  if (!s) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  let m = s.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if (m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  m = s.match(/[RＲ令](\d{1,2})[\.\/年](\d{1,2})[\.\/月](\d{1,2})/);
+  if (m) return `${2018+parseInt(m[1])}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  m = s.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+  if (m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  return s;
 }
 
-// === CSV インポート ===
+// ========================================
+// 認証 API
+// ========================================
 
-// CSVプレビュー（科目自動推定付き）
-router.post('/api/preview-csv', upload.single('csv'), (req, res) => {
+router.post('/api/auth/register', async (req, res) => {
+  try {
+    const { email, name, password } = req.body;
+    if (!email || !name || !password) return res.status(400).json({ error: '全項目を入力してください' });
+    if (password.length < 6) return res.status(400).json({ error: 'パスワードは6文字以上' });
+
+    const exists = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+    if (exists) return res.status(400).json({ error: 'このメールアドレスは登録済みです' });
+
+    const hash = await bcrypt.hash(password, 10);
+    const result = db.prepare('INSERT INTO users (email, name, password_hash) VALUES (?, ?, ?)').run(email, name, hash);
+    const userId = result.lastInsertRowid;
+
+    // デフォルト帳簿を作成
+    db.prepare('INSERT INTO books (user_id, name, emoji) VALUES (?, ?, ?)').run(userId, '個人', '👤');
+
+    // セッション作成
+    const token = crypto.randomUUID();
+    const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    db.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)').run(token, userId, expires);
+
+    res.cookie('session', token, { httpOnly: true, maxAge: 30 * 24 * 60 * 60 * 1000, sameSite: 'lax', path: '/' });
+    res.json({ success: true, user: { id: userId, email, name } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: 'メールとパスワードを入力' });
+
+    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+    if (!user) return res.status(401).json({ error: 'メールまたはパスワードが正しくありません' });
+
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid) return res.status(401).json({ error: 'メールまたはパスワードが正しくありません' });
+
+    const token = crypto.randomUUID();
+    const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    db.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)').run(token, user.id, expires);
+
+    res.cookie('session', token, { httpOnly: true, maxAge: 30 * 24 * 60 * 60 * 1000, sameSite: 'lax', path: '/' });
+    res.json({ success: true, user: { id: user.id, email: user.email, name: user.name } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/api/auth/logout', (req, res) => {
+  const token = req.cookies.session;
+  if (token) db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+  res.clearCookie('session', { path: '/' });
+  res.json({ success: true });
+});
+
+router.get('/api/auth/me', auth, (req, res) => {
+  const user = db.prepare('SELECT id, email, name FROM users WHERE id = ?').get(req.userId);
+  const books = db.prepare('SELECT * FROM books WHERE user_id = ? ORDER BY created_at').all(req.userId);
+  res.json({ user, books });
+});
+
+// ========================================
+// 帳簿 API
+// ========================================
+
+router.get('/api/books', auth, (req, res) => {
+  res.json(db.prepare('SELECT * FROM books WHERE user_id = ? ORDER BY created_at').all(req.userId));
+});
+
+router.post('/api/books', auth, (req, res) => {
+  const { name, emoji } = req.body;
+  if (!name) return res.status(400).json({ error: '帳簿名を入力してください' });
+  const r = db.prepare('INSERT INTO books (user_id, name, emoji) VALUES (?, ?, ?)').run(req.userId, name, emoji || '📒');
+  res.json({ id: r.lastInsertRowid, success: true });
+});
+
+router.put('/api/books/:id', auth, (req, res) => {
+  const { name, emoji } = req.body;
+  const book = db.prepare('SELECT * FROM books WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
+  if (!book) return res.status(404).json({ error: '帳簿が見つかりません' });
+  db.prepare('UPDATE books SET name=?, emoji=? WHERE id=?').run(name || book.name, emoji || book.emoji, book.id);
+  res.json({ success: true });
+});
+
+router.delete('/api/books/:id', auth, (req, res) => {
+  const book = db.prepare('SELECT * FROM books WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
+  if (!book) return res.status(404).json({ error: '帳簿が見つかりません' });
+  const count = db.prepare('SELECT COUNT(*) as c FROM books WHERE user_id = ?').get(req.userId);
+  if (count.c <= 1) return res.status(400).json({ error: '最後の帳簿は削除できません' });
+  db.prepare('DELETE FROM books WHERE id = ?').run(book.id);
+  res.json({ success: true });
+});
+
+// ========================================
+// 収入 API (帳簿スコープ)
+// ========================================
+
+router.post('/api/income', auth, (req, res) => {
+  try {
+    const { bookId, date, amount, type, description } = req.body;
+    const book = bookAccess(req);
+    if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
+    if (!date || !amount) return res.status(400).json({ error: '日付と金額は必須' });
+    const r = db.prepare('INSERT INTO income (book_id, date, amount, type, description) VALUES (?,?,?,?,?)').run(book.id, date, parseInt(amount), type || '振込', description || '');
+    res.json({ id: r.lastInsertRowid, success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/api/income', auth, (req, res) => {
+  try {
+    const book = bookAccess(req);
+    if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
+    const { year, month } = req.query;
+    let sql = 'SELECT * FROM income WHERE book_id = ?';
+    const params = [book.id];
+    if (year) { sql += " AND strftime('%Y',date) = ?"; params.push(year); }
+    if (month) { sql += " AND strftime('%m',date) = ?"; params.push(month.padStart(2,'0')); }
+    sql += ' ORDER BY date DESC, id DESC';
+    res.json(db.prepare(sql).all(...params));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.put('/api/income/:id', auth, (req, res) => {
+  try {
+    const { date, amount, type, description } = req.body;
+    const inc = db.prepare('SELECT i.* FROM income i JOIN books b ON i.book_id=b.id WHERE i.id=? AND b.user_id=?').get(req.params.id, req.userId);
+    if (!inc) return res.status(404).json({ error: '見つかりません' });
+    db.prepare("UPDATE income SET date=?,amount=?,type=?,description=?,updated_at=datetime('now','localtime') WHERE id=?").run(date, parseInt(amount), type, description, inc.id);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/api/income/:id', auth, (req, res) => {
+  try {
+    const inc = db.prepare('SELECT i.* FROM income i JOIN books b ON i.book_id=b.id WHERE i.id=? AND b.user_id=?').get(req.params.id, req.userId);
+    if (!inc) return res.status(404).json({ error: '見つかりません' });
+    db.prepare('DELETE FROM income WHERE id=?').run(inc.id);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ========================================
+// 経費 API (帳簿スコープ)
+// ========================================
+
+router.post('/api/expense', auth, upload.single('receipt'), (req, res) => {
+  try {
+    const { bookId, date, amount, category, description, source } = req.body;
+    // bookIdがbodyにあるのでbookAccessの代わりに直接チェック
+    const book = db.prepare('SELECT * FROM books WHERE id=? AND user_id=?').get(parseInt(bookId), req.userId);
+    if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
+    if (!date || !amount || !category) return res.status(400).json({ error: '日付、金額、科目は必須' });
+    const receiptPath = req.file ? `/uploads/${req.file.filename}` : null;
+    const r = db.prepare('INSERT INTO expenses (book_id,date,amount,category,description,receipt_path,source) VALUES (?,?,?,?,?,?,?)').run(book.id, date, parseInt(amount), category, description || '', receiptPath, source || 'manual');
+    res.json({ id: r.lastInsertRowid, success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/api/expenses', auth, (req, res) => {
+  try {
+    const book = bookAccess(req);
+    if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
+    const { year, month, category } = req.query;
+    let sql = 'SELECT * FROM expenses WHERE book_id = ?';
+    const params = [book.id];
+    if (year) { sql += " AND strftime('%Y',date) = ?"; params.push(year); }
+    if (month) { sql += " AND strftime('%m',date) = ?"; params.push(month.padStart(2,'0')); }
+    if (category) { sql += " AND category = ?"; params.push(category); }
+    sql += ' ORDER BY date DESC, id DESC';
+    res.json(db.prepare(sql).all(...params));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.put('/api/expense/:id', auth, (req, res) => {
+  try {
+    const { date, amount, category, description } = req.body;
+    const exp = db.prepare('SELECT e.* FROM expenses e JOIN books b ON e.book_id=b.id WHERE e.id=? AND b.user_id=?').get(req.params.id, req.userId);
+    if (!exp) return res.status(404).json({ error: '見つかりません' });
+    db.prepare("UPDATE expenses SET date=?,amount=?,category=?,description=?,updated_at=datetime('now','localtime') WHERE id=?").run(date, parseInt(amount), category, description, exp.id);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/api/expense/:id', auth, (req, res) => {
+  try {
+    const exp = db.prepare('SELECT e.* FROM expenses e JOIN books b ON e.book_id=b.id WHERE e.id=? AND b.user_id=?').get(req.params.id, req.userId);
+    if (!exp) return res.status(404).json({ error: '見つかりません' });
+    if (exp.receipt_path) { const fp = path.join(__dirname, exp.receipt_path); if (fs.existsSync(fp)) fs.unlinkSync(fp); }
+    db.prepare('DELETE FROM expenses WHERE id=?').run(exp.id);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ========================================
+// ダッシュボード・集計 API
+// ========================================
+
+router.get('/api/dashboard', auth, (req, res) => {
+  try {
+    const book = bookAccess(req);
+    if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
+    const now = new Date();
+    const year = now.getFullYear().toString();
+    const month = (now.getMonth()+1).toString().padStart(2,'0');
+
+    const mi = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM income WHERE book_id=? AND strftime('%Y',date)=? AND strftime('%m',date)=?").get(book.id,year,month);
+    const me = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND strftime('%Y',date)=? AND strftime('%m',date)=?").get(book.id,year,month);
+    const yi = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM income WHERE book_id=? AND strftime('%Y',date)=?").get(book.id,year);
+    const ye = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND strftime('%Y',date)=?").get(book.id,year);
+
+    const ri = db.prepare("SELECT id,date,amount,type as category,description,'income' as kind FROM income WHERE book_id=? ORDER BY date DESC,id DESC LIMIT 10").all(book.id);
+    const re2 = db.prepare("SELECT id,date,amount,category,description,'expense' as kind FROM expenses WHERE book_id=? ORDER BY date DESC,id DESC LIMIT 10").all(book.id);
+    const recent = [...ri,...re2].sort((a,b)=>b.date>a.date?1:b.date<a.date?-1:0).slice(0,10);
+
+    const catBreak = db.prepare("SELECT category,SUM(amount) as total FROM expenses WHERE book_id=? AND strftime('%Y',date)=? GROUP BY category ORDER BY total DESC").all(book.id,year);
+
+    const trend = db.prepare(`
+      SELECT m.month,COALESCE(i.total,0) as income,COALESCE(e.total,0) as expense FROM (
+        SELECT '01' as month UNION SELECT '02' UNION SELECT '03' UNION SELECT '04'
+        UNION SELECT '05' UNION SELECT '06' UNION SELECT '07' UNION SELECT '08'
+        UNION SELECT '09' UNION SELECT '10' UNION SELECT '11' UNION SELECT '12'
+      ) m LEFT JOIN (SELECT strftime('%m',date) as month,SUM(amount) as total FROM income WHERE book_id=? AND strftime('%Y',date)=? GROUP BY strftime('%m',date)) i ON m.month=i.month
+      LEFT JOIN (SELECT strftime('%m',date) as month,SUM(amount) as total FROM expenses WHERE book_id=? AND strftime('%Y',date)=? GROUP BY strftime('%m',date)) e ON m.month=e.month ORDER BY m.month
+    `).all(book.id,year,book.id,year);
+
+    res.json({ monthIncome:mi.t, monthExpense:me.t, yearIncome:yi.t, yearExpense:ye.t, yearProfit:yi.t-ye.t, recentTransactions:recent, categoryBreakdown:catBreak, monthlyTrend:trend });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/api/summary/:year', auth, (req, res) => {
+  try {
+    const book = bookAccess(req);
+    if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
+    const year = req.params.year;
+    const inc = db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM income WHERE book_id=? AND strftime('%Y',date)=?").get(book.id,year);
+    const exp = db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM expenses WHERE book_id=? AND strftime('%Y',date)=?").get(book.id,year);
+    const breakdown = db.prepare("SELECT category,SUM(amount) as total,COUNT(*) as count FROM expenses WHERE book_id=? AND strftime('%Y',date)=? GROUP BY category ORDER BY total DESC").all(book.id,year);
+    const mi = db.prepare("SELECT strftime('%m',date) as month,SUM(amount) as total FROM income WHERE book_id=? AND strftime('%Y',date)=? GROUP BY strftime('%m',date)").all(book.id,year);
+    const me2 = db.prepare("SELECT strftime('%m',date) as month,SUM(amount) as total FROM expenses WHERE book_id=? AND strftime('%Y',date)=? GROUP BY strftime('%m',date)").all(book.id,year);
+    res.json({ year, income:inc.total, expenses:exp.total, profit:inc.total-exp.total, breakdown, monthlyIncome:mi, monthlyExpense:me2 });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// AI出力
+router.get('/api/ai-format/:year', auth, (req, res) => {
+  try {
+    const book = bookAccess(req);
+    if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
+    const year = req.params.year;
+    const inc = db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM income WHERE book_id=? AND strftime('%Y',date)=?").get(book.id,year);
+    const exps = db.prepare("SELECT category,SUM(amount) as total FROM expenses WHERE book_id=? AND strftime('%Y',date)=? GROUP BY category ORDER BY total DESC").all(book.id,year);
+    const expT = db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM expenses WHERE book_id=? AND strftime('%Y',date)=?").get(book.id,year);
+    const cn = { outsourcing:'外注工賃',travel:'旅費交通費',communication:'通信費',supplies:'消耗品費',advertising:'広告宣伝費',entertainment:'接待交際費',depreciation:'減価償却費',home_office:'家事按分',fees:'支払手数料',misc:'雑費' };
+    const bd = 650000;
+    let t = `【${year}年分 確定申告データ】\n\n期間: ${year}/01/01 - ${year}/12/31\n総収入: ${inc.total.toLocaleString()}円\n総経費: ${expT.total.toLocaleString()}円\n\n【経費内訳】\n`;
+    exps.forEach(i => { t += `  ${cn[i.category]||i.category}: ${i.total.toLocaleString()}円\n`; });
+    t += `\n【控除・所得】\n  青色申告特別控除: ${bd.toLocaleString()}円\n  課税所得目安: ${Math.max(0,inc.total-expT.total-bd).toLocaleString()}円\n`;
+    res.json({ text: t });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// CSV プレビュー
+router.post('/api/preview-csv', auth, upload.single('csv'), (req, res) => {
   try {
     const Papa = require('papaparse');
-    const csvContent = fs.readFileSync(req.file.path, 'utf-8');
-    const { data, meta } = Papa.parse(csvContent, { header: true, skipEmptyLines: true });
-
+    const content = fs.readFileSync(req.file.path, 'utf-8');
+    const { data } = Papa.parse(content, { header: true, skipEmptyLines: true });
     const rows = [];
     for (const row of data) {
-      const rawDate = row['利用日'] || row['ご利用日'] || row['日付'] || row['Date'] || row['利用年月日'] || '';
-      const rawAmount = row['金額'] || row['利用金額'] || row['Amount'] || row['ご利用金額'] || row['支払金額'] || '0';
-      const desc = row['利用店舗'] || row['ご利用先'] || row['摘要'] || row['Description'] || row['ご利用先など'] || row['利用先'] || '';
-
+      const rawDate = row['利用日']||row['ご利用日']||row['日付']||row['Date']||row['利用年月日']||'';
+      const rawAmt = row['金額']||row['利用金額']||row['Amount']||row['ご利用金額']||row['支払金額']||'0';
+      const desc = row['利用店舗']||row['ご利用先']||row['摘要']||row['Description']||row['ご利用先など']||row['利用先']||'';
       const date = normalizeDate(rawDate);
-      const amount = Math.abs(parseInt(String(rawAmount).replace(/[^0-9\-]/g, '')) || 0);
-
-      if (date && amount > 0) {
-        rows.push({
-          date,
-          amount,
-          description: desc.trim(),
-          category: suggestCategory(desc)
-        });
-      }
+      const amount = Math.abs(parseInt(String(rawAmt).replace(/[^0-9\-]/g,''))||0);
+      if (date && amount > 0) rows.push({ date, amount, description: desc.trim(), category: suggestCategory(desc) });
     }
-
-    // 一時ファイル削除
     fs.unlinkSync(req.file.path);
-
-    res.json({ success: true, rows, headers: meta.fields || [] });
+    res.json({ success: true, rows });
   } catch (err) {
     if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
     res.status(500).json({ error: err.message });
   }
 });
 
-// CSV一括登録（プレビュー確認後）
-router.post('/api/import-csv', express.json({ limit: '10mb' }), (req, res) => {
+// CSV 一括登録
+router.post('/api/import-csv', auth, (req, res) => {
   try {
-    const { rows } = req.body;
-    if (!rows || !Array.isArray(rows)) {
-      return res.status(400).json({ error: '取引データが必要です' });
-    }
-
-    const stmt = db.prepare(
-      'INSERT INTO expenses (date, amount, category, description, source) VALUES (?, ?, ?, ?, ?)'
-    );
-
-    const insertMany = db.transaction((items) => {
-      let count = 0;
-      for (const item of items) {
-        if (item.date && item.amount > 0) {
-          stmt.run(item.date, Math.abs(item.amount), item.category || 'misc', item.description || '', 'csv');
-          count++;
-        }
-      }
-      return count;
+    const { bookId, rows } = req.body;
+    const book = db.prepare('SELECT * FROM books WHERE id=? AND user_id=?').get(parseInt(bookId), req.userId);
+    if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
+    const stmt = db.prepare('INSERT INTO expenses (book_id,date,amount,category,description,source) VALUES (?,?,?,?,?,?)');
+    const tx = db.transaction((items) => {
+      let c = 0;
+      for (const i of items) { if (i.date && i.amount > 0) { stmt.run(book.id, i.date, Math.abs(i.amount), i.category||'misc', i.description||'', 'csv'); c++; } }
+      return c;
     });
-
-    const count = insertMany(rows);
+    const count = tx(rows);
     res.json({ success: true, imported: count });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// 科目推定API（フロントエンドからも利用可能）
-router.post('/api/suggest-category', express.json(), (req, res) => {
-  const { description } = req.body;
-  res.json({ category: suggestCategory(description) });
-});
-
-// === バックアップ ===
-router.get('/api/export', (req, res) => {
+// バックアップ
+router.get('/api/export', auth, (req, res) => {
   try {
-    const income = db.prepare('SELECT * FROM income ORDER BY date').all();
-    const expenses = db.prepare('SELECT * FROM expenses ORDER BY date').all();
-
-    const exportData = {
-      exportDate: new Date().toISOString(),
-      income,
-      expenses,
-      summary: {
-        totalIncome: income.reduce((sum, r) => sum + r.amount, 0),
-        totalExpenses: expenses.reduce((sum, r) => sum + r.amount, 0),
-        incomeCount: income.length,
-        expenseCount: expenses.length
-      }
-    };
-
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', `attachment; filename=tax-backup-${new Date().toISOString().slice(0, 10)}.json`);
-    res.json(exportData);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+    const book = bookAccess(req);
+    if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
+    const inc = db.prepare('SELECT * FROM income WHERE book_id=? ORDER BY date').all(book.id);
+    const exp = db.prepare('SELECT * FROM expenses WHERE book_id=? ORDER BY date').all(book.id);
+    res.setHeader('Content-Type','application/json');
+    res.setHeader('Content-Disposition',`attachment; filename=keihi-backup-${book.name}-${new Date().toISOString().slice(0,10)}.json`);
+    res.json({ exportDate: new Date().toISOString(), book: book.name, income: inc, expenses: exp });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// === ルーターをマウント ===
-// /tax パスと / の両方で動作させる（本番: /tax、ローカル: /）
+// === ルーターマウント ===
 app.use('/tax', router);
 app.use('/', router);
+app.get('/tax', (req, res) => { if (!req.originalUrl.endsWith('/') && !req.originalUrl.includes('.') && !req.originalUrl.includes('/api/')) return res.redirect(301, '/tax/'); });
 
-// /tax へのアクセスを /tax/ にリダイレクト
-app.get('/tax', (req, res) => {
-  if (!req.originalUrl.endsWith('/') && !req.originalUrl.includes('.') && !req.originalUrl.includes('/api/')) {
-    return res.redirect(301, '/tax/');
-  }
-});
-
-// サーバー起動
 app.listen(PORT, () => {
-  console.log(`\n  ┌──────────────────────────────────────┐`);
-  console.log(`  │                                      │`);
-  console.log(`  │   💰 経費管理ツール 起動完了          │`);
-  console.log(`  │   http://localhost:${PORT}              │`);
-  console.log(`  │                                      │`);
-  console.log(`  └──────────────────────────────────────┘\n`);
+  console.log(`\n  💰 Keihi v2 起動完了 → http://localhost:${PORT}\n`);
 });
