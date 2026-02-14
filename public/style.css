@@ -284,6 +284,71 @@ body { min-height: 100dvh; }
 .book-item-btn.danger:hover { background: var(--red-bg); color: var(--red); }
 
 /* ============================================
+   データ概要・見える化
+   ============================================ */
+.overview-loading { display: flex; justify-content: center; padding: 24px; }
+
+.ov-book {
+  background: var(--bg); border-radius: var(--radius-sm); padding: 16px;
+  margin-bottom: 12px; animation: card-pop .4s cubic-bezier(.22,1,.36,1) both;
+}
+.ov-book-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.ov-book-emoji { font-size: 22px; }
+.ov-book-name { font-size: 15px; font-weight: 700; }
+.ov-book-badge { font-size: 11px; padding: 2px 8px; background: var(--pri-bg); color: var(--pri); border-radius: 999px; font-weight: 600; margin-left: auto; }
+
+.ov-stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.ov-stat { text-align: center; }
+.ov-stat-val { font-size: 18px; font-weight: 800; display: block; }
+.ov-stat-val.income { color: var(--green); }
+.ov-stat-val.expense { color: var(--red); }
+.ov-stat-val.neutral { color: var(--pri); }
+.ov-stat-label { font-size: 11px; color: var(--text3); }
+
+.ov-cats { display: flex; flex-direction: column; gap: 6px; }
+.ov-cat-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.ov-cat-name { width: 80px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ov-cat-bar { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.ov-cat-fill { height: 100%; border-radius: 3px; background: var(--pri); transition: width .6s cubic-bezier(.22,1,.36,1); }
+.ov-cat-val { width: 70px; text-align: right; color: var(--text2); font-weight: 500; }
+.ov-date-range { font-size: 11px; color: var(--text3); text-align: center; margin-top: 8px; }
+
+.ov-storage {
+  background: var(--bg); border-radius: var(--radius-sm); padding: 16px; margin-top: 4px;
+}
+.ov-storage-title { font-size: 13px; font-weight: 700; margin-bottom: 10px; }
+.ov-storage-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ov-storage-item { text-align: center; padding: 10px; background: var(--card); border-radius: var(--radius-xs); }
+.ov-storage-val { font-size: 16px; font-weight: 800; display: block; color: var(--text); }
+.ov-storage-label { font-size: 11px; color: var(--text3); }
+
+/* データの仕組みフロー */
+.how-flow {
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  padding: 16px 0; overflow-x: auto;
+}
+.how-step {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 10px 8px; background: var(--bg); border-radius: var(--radius-sm);
+  min-width: 64px; text-align: center;
+}
+.how-icon { font-size: 22px; }
+.how-text { font-size: 11px; font-weight: 600; line-height: 1.3; }
+.how-text small { font-weight: 400; color: var(--text3); }
+.how-arrow { color: var(--text3); font-size: 14px; font-weight: 600; flex-shrink: 0; }
+
+.how-info {
+  margin-top: 12px; padding: 12px; background: var(--bg); border-radius: var(--radius-sm);
+}
+.how-info-row {
+  display: flex; justify-content: space-between; padding: 6px 0; font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.how-info-row:last-child { border-bottom: none; }
+.how-info-label { color: var(--text3); font-weight: 500; }
+.how-info-val { font-weight: 600; color: var(--text); font-family: monospace; font-size: 11px; }
+
+/* ============================================
    取引履歴ビュー
    ============================================ */
 .filter-bar {

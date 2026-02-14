@@ -139,6 +139,16 @@
       <section class="view" id="view-settings">
         <div class="view-head"><h1>設定</h1></div>
 
+        <!-- データ概要 -->
+        <div class="card card-overview">
+          <h3 class="card-title">📊 データ概要</h3>
+          <div id="overview-loading" class="overview-loading"><div class="spinner"></div></div>
+          <div id="overview-content" style="display:none">
+            <div id="overview-books"></div>
+            <div class="ov-storage" id="overview-storage"></div>
+          </div>
+        </div>
+
         <div class="card">
           <h3 class="card-title">帳簿管理</h3>
           <p class="card-desc">個人・会社など用途別に帳簿を分けて管理できます</p>
@@ -155,6 +165,26 @@
         <div class="card">
           <h3 class="card-title">バックアップ</h3>
           <button class="btn-outline btn-full" id="btn-backup">データをエクスポート</button>
+        </div>
+
+        <!-- データの仕組み -->
+        <div class="card card-how">
+          <h3 class="card-title">💡 データの仕組み</h3>
+          <div class="how-flow">
+            <div class="how-step"><span class="how-icon">📷</span><span class="how-text">レシート撮影<br><small>OCRで自動読取</small></span></div>
+            <div class="how-arrow">→</div>
+            <div class="how-step"><span class="how-icon">✅</span><span class="how-text">確認・保存<br><small>科目を自動推定</small></span></div>
+            <div class="how-arrow">→</div>
+            <div class="how-step"><span class="how-icon">💾</span><span class="how-text">帳簿に記録<br><small>SQLiteに安全保存</small></span></div>
+            <div class="how-arrow">→</div>
+            <div class="how-step"><span class="how-icon">📊</span><span class="how-text">レポート<br><small>自動集計・AI出力</small></span></div>
+          </div>
+          <div class="how-info">
+            <div class="how-info-row"><span class="how-info-label">保存先</span><span class="how-info-val">data/database.sqlite</span></div>
+            <div class="how-info-row"><span class="how-info-label">レシート</span><span class="how-info-val">uploads/ フォルダ</span></div>
+            <div class="how-info-row"><span class="how-info-label">バックアップ</span><span class="how-info-val">data/backups/ フォルダ</span></div>
+            <div class="how-info-row"><span class="how-info-label">構造</span><span class="how-info-val">ユーザー → 帳簿 → 収入/経費</span></div>
+          </div>
         </div>
 
         <button class="btn-danger btn-full" id="btn-logout">ログアウト</button>

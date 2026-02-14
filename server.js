@@ -31,12 +31,17 @@ db.pragma('foreign_keys = ON');
 
 // === マイグレーション: 旧スキーマ対応 ===
 try {
-  // 旧テーブルにbook_idが無い場合は削除して再作成
-  const cols = db.prepare("PRAGMA table_info(income)").all();
-  if (cols.length > 0 && !cols.find(c => c.name === 'book_id')) {
-    console.log('⚡ 旧スキーマを検出、テーブルを再構築します...');
-    db.exec('DROP TABLE IF EXISTS income');
-    db.exec('DROP TABLE IF EXISTS expenses');
+  // 1) income/expenses: book_idが無い場合は再作成
+  const incCols = db.prepare("PRAGMA table_info(income)").all();
+  if (incCols.length > 0 && !incCols.find(c => c.name === 'book_id')) {
+    console.log('⚡ income/expenses 旧スキーマ検出、再構築...');
+    db.exec('DROP TABLE IF EXISTS income; DROP TABLE IF EXISTS expenses;');
+  }
+  // 2) users: auth_providerが無い場合は再作成 (Google認証対応)
+  const userCols = db.prepare("PRAGMA table_info(users)").all();
+  if (userCols.length > 0 && !userCols.find(c => c.name === 'auth_provider')) {
+    console.log('⚡ users 旧スキーマ検出、再構築...');
+    db.exec('DROP TABLE IF EXISTS sessions; DROP TABLE IF EXISTS users;');
   }
 } catch (e) { /* テーブルが存在しない場合は無視 */ }
 
@@ -552,6 +557,54 @@ router.get('/api/export', auth, (req, res) => {
     res.setHeader('Content-Type','application/json');
     res.setHeader('Content-Disposition',`attachment; filename=keihi-backup-${book.name}-${new Date().toISOString().slice(0,10)}.json`);
     res.json({ exportDate: new Date().toISOString(), book: book.name, income: inc, expenses: exp });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ========================================
+// データ概要 API (管理者向け見える化)
+// ========================================
+router.get('/api/admin/overview', auth, (req, res) => {
+  try {
+    const userBooks = db.prepare('SELECT * FROM books WHERE user_id = ? ORDER BY created_at').all(req.userId);
+    const booksData = userBooks.map(b => {
+      const ic = db.prepare('SELECT COUNT(*) as c, COALESCE(SUM(amount),0) as t FROM income WHERE book_id=?').get(b.id);
+      const ec = db.prepare('SELECT COUNT(*) as c, COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=?').get(b.id);
+      const rc = db.prepare("SELECT COUNT(*) as c FROM expenses WHERE book_id=? AND receipt_path IS NOT NULL AND receipt_path != ''").get(b.id);
+      const cats = db.prepare('SELECT category, SUM(amount) as total, COUNT(*) as count FROM expenses WHERE book_id=? GROUP BY category ORDER BY total DESC').all(b.id);
+      const oldest = db.prepare('SELECT MIN(d) as d FROM (SELECT MIN(date) as d FROM income WHERE book_id=? UNION SELECT MIN(date) as d FROM expenses WHERE book_id=?)').get(b.id, b.id);
+      const newest = db.prepare('SELECT MAX(d) as d FROM (SELECT MAX(date) as d FROM income WHERE book_id=? UNION SELECT MAX(date) as d FROM expenses WHERE book_id=?)').get(b.id, b.id);
+      return {
+        id: b.id, name: b.name, emoji: b.emoji,
+        incomeCount: ic.c, incomeTotal: ic.t,
+        expenseCount: ec.c, expenseTotal: ec.t,
+        receiptCount: rc.c,
+        categories: cats,
+        dateRange: { oldest: oldest.d, newest: newest.d }
+      };
+    });
+
+    // ストレージ情報
+    let dbSizeKB = 0;
+    try { dbSizeKB = Math.round(fs.statSync('./data/database.sqlite').size / 1024); } catch {}
+    let receiptFiles = 0, receiptSizeKB = 0;
+    try {
+      const files = fs.readdirSync('./uploads');
+      receiptFiles = files.length;
+      files.forEach(f => { try { receiptSizeKB += fs.statSync(`./uploads/${f}`).size; } catch {} });
+      receiptSizeKB = Math.round(receiptSizeKB / 1024);
+    } catch {}
+
+    // バックアップ情報
+    let backups = [];
+    try {
+      backups = fs.readdirSync('./data/backups').filter(f => f.endsWith('.sqlite')).sort().reverse().slice(0, 3);
+    } catch {}
+
+    res.json({
+      books: booksData,
+      storage: { dbSizeKB, receiptFiles, receiptSizeKB, backups },
+      system: { dbPath: 'data/database.sqlite', uploadsPath: 'uploads/', backupPath: 'data/backups/' }
+    });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
