@@ -12,6 +12,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -24,10 +25,16 @@
       <h1 class="auth-title">Keihi</h1>
       <p class="auth-sub">シンプルな経費管理</p>
 
+      <!-- Google ログイン -->
+      <div id="google-signin-wrap" style="display:none">
+        <div id="google-signin-btn" class="google-btn-wrap"></div>
+        <div class="auth-divider"><span>または</span></div>
+      </div>
+
       <form id="form-login" class="auth-form">
         <input type="email" id="login-email" placeholder="メールアドレス" required autocomplete="email">
         <input type="password" id="login-password" placeholder="パスワード" required autocomplete="current-password">
-        <button type="submit" class="btn-auth">ログイン</button>
+        <button type="submit" class="btn-auth">メールでログイン</button>
       </form>
 
       <form id="form-register" class="auth-form" style="display:none">
@@ -55,7 +62,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><polyline points="6 9 12 15 18 9"/></svg>
       </button>
       <div class="topbar-logo">K</div>
-      <button class="user-btn" id="user-menu-btn"><span id="user-initial">K</span></button>
+      <button class="user-btn" id="user-menu-btn"><span id="user-initial">K</span><img id="user-avatar-img" class="user-avatar-img" style="display:none" alt=""></button>
     </header>
 
     <!-- メインコンテンツ -->

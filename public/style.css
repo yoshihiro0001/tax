@@ -77,8 +77,25 @@ body { min-height: 100dvh; }
 }
 .btn-auth:active { transform: scale(.97); }
 
+/* Google ログインボタン */
+.google-btn-wrap { display: flex; justify-content: center; margin-bottom: 0; }
+.auth-divider {
+  display: flex; align-items: center; gap: 12px; margin: 20px 0;
+  color: var(--text3); font-size: 12px;
+}
+.auth-divider::before, .auth-divider::after {
+  content: ''; flex: 1; height: 1px; background: var(--border);
+}
+
 .auth-toggle { margin-top: 20px; font-size: 13px; color: var(--text3); }
 .auth-toggle a { color: var(--pri); font-weight: 600; text-decoration: none; margin-left: 6px; }
+
+/* ユーザーアバター画像 */
+.user-avatar-img {
+  width: 36px; height: 36px; border-radius: 999px; object-fit: cover;
+  position: absolute; top: 0; left: 0;
+}
+.user-btn { position: relative; overflow: hidden; }
 
 /* ============================================
    トップバー

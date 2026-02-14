@@ -54,6 +54,7 @@ const App = {
     this.setupModals();
     this.setupCSV();
     this.setupHistory();
+    this.initGoogleSignIn();
   },
 
   // ========================================
@@ -80,6 +81,57 @@ const App = {
     t.textContent = msg;
     c.appendChild(t);
     setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 300); }, 2500);
+  },
+
+  // ========================================
+  // Google Sign-In
+  // ========================================
+  async initGoogleSignIn() {
+    try {
+      const cfg = await this.api('/api/config');
+      if (!cfg.googleClientId) return; // Google未設定なら非表示のまま
+
+      // GSIが読み込まれるまで待機
+      const waitForGoogle = () => new Promise((resolve) => {
+        if (window.google?.accounts?.id) return resolve();
+        const check = setInterval(() => {
+          if (window.google?.accounts?.id) { clearInterval(check); resolve(); }
+        }, 100);
+        setTimeout(() => { clearInterval(check); resolve(); }, 5000);
+      });
+      await waitForGoogle();
+      if (!window.google?.accounts?.id) return;
+
+      google.accounts.id.initialize({
+        client_id: cfg.googleClientId,
+        callback: (response) => this.handleGoogleCallback(response),
+        auto_select: false,
+        context: 'signin'
+      });
+
+      const btnWrap = qs('#google-signin-btn');
+      google.accounts.id.renderButton(btnWrap, {
+        type: 'standard', theme: 'outline', size: 'large',
+        text: 'signin_with', shape: 'pill', width: 280, locale: 'ja'
+      });
+      qs('#google-signin-wrap').style.display = '';
+    } catch { /* Google未設定 */ }
+  },
+
+  async handleGoogleCallback(response) {
+    try {
+      const res = await this.api('/api/auth/google', {
+        method: 'POST',
+        body: JSON.stringify({ credential: response.credential })
+      });
+      this.user = res.user;
+      const me = await this.api('/api/auth/me');
+      this.user = me.user;
+      this.books = me.books;
+      this.currentBook = this.books[0];
+      this.showApp();
+      this.toast('ログインしました', 'success');
+    } catch (err) { this.toast(err.message, 'error'); }
   },
 
   // ========================================
@@ -182,7 +234,18 @@ const App = {
     if (!this.currentBook) return;
     qs('#cur-book-emoji').textContent = this.currentBook.emoji;
     qs('#cur-book-name').textContent = this.currentBook.name;
-    if (this.user) qs('#user-initial').textContent = this.user.name.charAt(0).toUpperCase();
+    if (this.user) {
+      qs('#user-initial').textContent = this.user.name.charAt(0).toUpperCase();
+      const avatarImg = qs('#user-avatar-img');
+      if (this.user.avatar_url) {
+        avatarImg.src = this.user.avatar_url;
+        avatarImg.style.display = '';
+        qs('#user-initial').style.display = 'none';
+      } else {
+        avatarImg.style.display = 'none';
+        qs('#user-initial').style.display = '';
+      }
+    }
   },
 
   // ========================================

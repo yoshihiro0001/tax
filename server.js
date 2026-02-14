@@ -6,10 +6,18 @@ const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const cookieParser = require('cookie-parser');
 const crypto = require('crypto');
+const https = require('https');
 
 const app = express();
 const router = express.Router();
 const PORT = process.env.PORT || 3001;
+
+// === 設定読み込み ===
+let GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+try {
+  const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf-8'));
+  if (cfg.GOOGLE_CLIENT_ID) GOOGLE_CLIENT_ID = cfg.GOOGLE_CLIENT_ID;
+} catch (e) { /* config.json 未作成時は無視 */ }
 
 // ディレクトリ作成
 ['data', 'data/backups', 'uploads'].forEach(dir => {
@@ -38,7 +46,9 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
-    password_hash TEXT NOT NULL,
+    password_hash TEXT,
+    avatar_url TEXT,
+    auth_provider TEXT DEFAULT 'local',
     created_at TEXT DEFAULT (datetime('now','localtime'))
   );
   CREATE TABLE IF NOT EXISTS sessions (
@@ -177,7 +187,8 @@ router.post('/api/auth/register', async (req, res) => {
     const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
     db.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)').run(token, userId, expires);
 
-    res.cookie('session', token, { httpOnly: true, maxAge: 30 * 24 * 60 * 60 * 1000, sameSite: 'lax', path: '/' });
+    const isSecure = req.get('X-Forwarded-Proto') === 'https' || req.secure;
+    res.cookie('session', token, { httpOnly: true, maxAge: 30*24*60*60*1000, sameSite: 'lax', path: '/', secure: isSecure });
     res.json({ success: true, user: { id: userId, email, name } });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -191,6 +202,7 @@ router.post('/api/auth/login', async (req, res) => {
 
     const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
     if (!user) return res.status(401).json({ error: 'メールまたはパスワードが正しくありません' });
+    if (!user.password_hash || user.auth_provider === 'google') return res.status(401).json({ error: 'このアカウントはGoogleログインをご利用ください' });
 
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'メールまたはパスワードが正しくありません' });
@@ -199,7 +211,8 @@ router.post('/api/auth/login', async (req, res) => {
     const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
     db.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)').run(token, user.id, expires);
 
-    res.cookie('session', token, { httpOnly: true, maxAge: 30 * 24 * 60 * 60 * 1000, sameSite: 'lax', path: '/' });
+    const isSecure = req.get('X-Forwarded-Proto') === 'https' || req.secure;
+    res.cookie('session', token, { httpOnly: true, maxAge: 30*24*60*60*1000, sameSite: 'lax', path: '/', secure: isSecure });
     res.json({ success: true, user: { id: user.id, email: user.email, name: user.name } });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -213,8 +226,69 @@ router.post('/api/auth/logout', (req, res) => {
   res.json({ success: true });
 });
 
+// Google Token検証
+function verifyGoogleToken(idToken) {
+  return new Promise((resolve, reject) => {
+    const url = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
+    https.get(url, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const info = JSON.parse(data);
+          if (info.error) reject(new Error(info.error_description || '無効なトークン'));
+          else resolve(info);
+        } catch (e) { reject(e); }
+      });
+    }).on('error', reject);
+  });
+}
+
+router.post('/api/auth/google', async (req, res) => {
+  try {
+    const { credential } = req.body;
+    if (!credential) return res.status(400).json({ error: 'トークンがありません' });
+    if (!GOOGLE_CLIENT_ID) return res.status(500).json({ error: 'Google認証が設定されていません' });
+
+    const info = await verifyGoogleToken(credential);
+    if (info.aud !== GOOGLE_CLIENT_ID) return res.status(401).json({ error: '無効なクライアントID' });
+    if (info.email_verified !== 'true') return res.status(401).json({ error: 'メール未認証' });
+
+    const email = info.email;
+    const name = info.name || info.given_name || email.split('@')[0];
+    const avatarUrl = info.picture || null;
+
+    // 既存ユーザーを検索、なければ作成
+    let user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+    if (!user) {
+      const r = db.prepare('INSERT INTO users (email, name, avatar_url, auth_provider) VALUES (?,?,?,?)').run(email, name, avatarUrl, 'google');
+      const userId = r.lastInsertRowid;
+      db.prepare('INSERT INTO books (user_id, name, emoji) VALUES (?, ?, ?)').run(userId, '個人', '👤');
+      user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+    } else {
+      // アバター更新
+      if (avatarUrl) db.prepare('UPDATE users SET avatar_url=? WHERE id=?').run(avatarUrl, user.id);
+    }
+
+    const token = crypto.randomUUID();
+    const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    db.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)').run(token, user.id, expires);
+
+    const isSecure = req.get('X-Forwarded-Proto') === 'https' || req.secure;
+    res.cookie('session', token, { httpOnly: true, maxAge: 30*24*60*60*1000, sameSite: 'lax', path: '/', secure: isSecure });
+    res.json({ success: true, user: { id: user.id, email: user.email, name: user.name } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 公開設定 (Googleクライアント IDなど)
+router.get('/api/config', (req, res) => {
+  res.json({ googleClientId: GOOGLE_CLIENT_ID || null });
+});
+
 router.get('/api/auth/me', auth, (req, res) => {
-  const user = db.prepare('SELECT id, email, name FROM users WHERE id = ?').get(req.userId);
+  const user = db.prepare('SELECT id, email, name, avatar_url, auth_provider FROM users WHERE id = ?').get(req.userId);
   const books = db.prepare('SELECT * FROM books WHERE user_id = ? ORDER BY created_at').all(req.userId);
   res.json({ user, books });
 });
