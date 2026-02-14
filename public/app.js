@@ -73,6 +73,11 @@ const App = {
     return 'misc';
   },
 
+  // 経費フロー状態
+  currentReceiptFile: null,
+  currentReceiptDataUrl: null,
+  currentExpenseStep: 'capture',
+
   // CSV取込プレビューデータを保持
   csvPreviewData: [],
 
@@ -82,7 +87,8 @@ const App = {
     this.setupForms();
     this.setupModals();
     this.setupMobile();
-    this.setupFileUpload();
+    this.setupExpenseFlow();
+    this.setupManualReceipt();
     this.setupFilters();
     this.initDateDefaults();
     this.initYearSelectors();
@@ -126,6 +132,11 @@ const App = {
 
     // モバイルサイドバー閉じる
     this.closeSidebar();
+
+    // 経費ビューに来たらキャプチャステップにリセット
+    if (viewName === 'expense') {
+      this.showExpenseStep('capture');
+    }
 
     // ビュー別データ読み込み
     switch (viewName) {
@@ -192,7 +203,11 @@ const App = {
         this.showToast('経費を保存しました', 'success');
         e.target.reset();
         this.initDateDefaults();
-        this.resetReceiptPreview();
+        // 手動フォームのレシートプレビューをリセット
+        const mp = document.getElementById('manual-receipt-preview');
+        if (mp) { mp.style.display = 'none'; }
+        const muc = document.querySelector('#manual-receipt-area .file-upload-content');
+        if (muc) { muc.style.display = ''; }
         // デフォルトカテゴリーをリセット
         document.querySelector('input[name="category"][value="misc"]').checked = true;
       } catch (err) {
@@ -355,209 +370,282 @@ const App = {
     document.getElementById('sidebar-overlay').classList.remove('active');
   },
 
-  // ファイルアップロード + OCR自動読取
-  setupFileUpload() {
-    const receiptInput = document.getElementById('expense-receipt');
-    const preview = document.getElementById('receipt-preview');
-    const previewImg = document.getElementById('receipt-preview-img');
-    const uploadContent = document.querySelector('#receipt-upload-area .file-upload-content');
+  // ===== 経費 Photo-First フロー =====
 
-    receiptInput.addEventListener('change', (e) => {
+  setupExpenseFlow() {
+    // カメラ撮影
+    document.getElementById('expense-receipt-capture').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      this.currentReceiptFile = file;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        this.currentReceiptDataUrl = ev.target.result;
+        this.startOcrFlow();
+      };
+      reader.readAsDataURL(file);
+    });
+
+    // 手動入力
+    document.getElementById('btn-manual-input').addEventListener('click', () => this.showExpenseStep('manual'));
+    document.getElementById('btn-back-to-capture').addEventListener('click', (e) => { e.preventDefault(); this.showExpenseStep('capture'); });
+    document.getElementById('btn-retake').addEventListener('click', () => this.showExpenseStep('capture'));
+    document.getElementById('btn-save-expense').addEventListener('click', () => this.saveFromConfirm());
+    document.getElementById('btn-capture-another').addEventListener('click', () => this.showExpenseStep('capture'));
+    document.getElementById('btn-to-dashboard').addEventListener('click', () => this.navigate('dashboard'));
+
+    this.buildConfirmCategoryChips();
+  },
+
+  // 手動フォーム用レシート添付
+  setupManualReceipt() {
+    const input = document.getElementById('expense-receipt');
+    if (!input) return;
+    input.addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (file) {
         const reader = new FileReader();
         reader.onload = (ev) => {
-          previewImg.src = ev.target.result;
-          preview.style.display = '';
-          uploadContent.style.display = 'none';
-          // OCR自動読取を開始
-          this.runOCR(file);
+          document.getElementById('manual-receipt-preview-img').src = ev.target.result;
+          document.getElementById('manual-receipt-preview').style.display = '';
+          document.querySelector('#manual-receipt-area .file-upload-content').style.display = 'none';
         };
         reader.readAsDataURL(file);
       }
     });
-
-    document.getElementById('btn-remove-receipt').addEventListener('click', () => {
-      this.resetReceiptPreview();
-    });
-
-    document.getElementById('ocr-result-close').addEventListener('click', () => {
-      document.getElementById('ocr-result-banner').style.display = 'none';
+    const rm = document.getElementById('btn-remove-manual-receipt');
+    if (rm) rm.addEventListener('click', () => {
+      input.value = '';
+      document.getElementById('manual-receipt-preview').style.display = 'none';
+      document.querySelector('#manual-receipt-area .file-upload-content').style.display = '';
     });
   },
 
-  // OCR実行
-  async runOCR(imageFile) {
-    const loadingEl = document.getElementById('ocr-loading');
-    const loadingText = document.getElementById('ocr-loading-text');
-    const progressFill = document.getElementById('ocr-progress-fill');
-    const resultBanner = document.getElementById('ocr-result-banner');
-    const resultText = document.getElementById('ocr-result-text');
+  showExpenseStep(stepName) {
+    this.currentExpenseStep = stepName;
+    document.querySelectorAll('#view-expense .expense-step').forEach(el => el.classList.remove('active'));
+    const target = document.getElementById('expense-' + stepName);
+    if (target) target.classList.add('active');
+    if (stepName === 'capture') {
+      document.getElementById('expense-receipt-capture').value = '';
+      this.currentReceiptFile = null;
+      this.currentReceiptDataUrl = null;
+    }
+  },
 
-    // ローディング表示
-    loadingEl.style.display = 'flex';
-    resultBanner.style.display = 'none';
+  buildConfirmCategoryChips() {
+    const grid = document.getElementById('confirm-category-grid');
+    if (!grid) return;
+    grid.innerHTML = Object.entries(this.categoryNames).map(([key, name]) =>
+      `<div class="confirm-category-chip" data-cat="${key}">${this.categoryEmojis[key] || ''} ${name}</div>`
+    ).join('');
+    grid.addEventListener('click', (e) => {
+      const chip = e.target.closest('.confirm-category-chip');
+      if (!chip) return;
+      grid.querySelectorAll('.confirm-category-chip').forEach(c => c.classList.remove('selected'));
+      chip.classList.add('selected');
+    });
+  },
+
+  async startOcrFlow() {
+    document.getElementById('scanning-receipt-img').src = this.currentReceiptDataUrl;
+    this.showExpenseStep('scanning');
+    const progressFill = document.getElementById('scanning-progress-fill');
+    const statusText = document.getElementById('scanning-status-text');
     progressFill.style.width = '0%';
-    loadingText.textContent = 'OCRエンジン起動中...';
+    statusText.textContent = '画像を最適化中...';
 
     try {
-      const result = await Tesseract.recognize(imageFile, 'jpn+eng', {
+      const processed = await this.preprocessImage(this.currentReceiptFile);
+      const result = await Tesseract.recognize(processed, 'jpn+eng', {
         logger: (m) => {
           if (m.status === 'recognizing text') {
-            const pct = Math.round(m.progress * 100);
-            progressFill.style.width = pct + '%';
-            loadingText.textContent = `読み取り中... ${pct}%`;
+            progressFill.style.width = Math.round(m.progress * 100) + '%';
+            statusText.textContent = `テキスト認識中... ${Math.round(m.progress * 100)}%`;
           } else if (m.status === 'loading language traineddata') {
-            loadingText.textContent = '言語データ読み込み中...';
+            statusText.textContent = '言語データ読み込み中...';
+            progressFill.style.width = '15%';
+          } else if (m.status === 'initializing api') {
+            statusText.textContent = 'エンジン初期化中...';
             progressFill.style.width = '10%';
           }
         }
       });
-
-      const text = result.data.text;
-      console.log('OCR Result:', text);
-
-      // テキストから情報を抽出
-      const extracted = this.parseReceiptText(text);
-      loadingEl.style.display = 'none';
-
-      // フォームに自動入力
-      const filled = [];
-      if (extracted.amount) {
-        document.getElementById('expense-amount').value = extracted.amount;
-        filled.push(`金額: ¥${extracted.amount.toLocaleString()}`);
-      }
-      if (extracted.date) {
-        document.getElementById('expense-date').value = extracted.date;
-        filled.push(`日付: ${extracted.date}`);
-      }
-      if (extracted.storeName) {
-        document.getElementById('expense-description').value = extracted.storeName;
-        filled.push(`摘要: ${extracted.storeName}`);
-      }
-
-      // 科目自動推定
-      const descForSuggestion = extracted.storeName || text;
-      const suggestedCategory = this.suggestCategory(descForSuggestion);
-      const categoryRadio = document.querySelector(`input[name="category"][value="${suggestedCategory}"]`);
-      if (categoryRadio) {
-        categoryRadio.checked = true;
-        filled.push(`科目: ${this.categoryNames[suggestedCategory]}`);
-      }
-
-      // 結果表示
-      if (filled.length > 0) {
-        resultText.textContent = `自動入力: ${filled.join(' / ')}`;
-        resultBanner.style.display = 'flex';
-        this.showToast(`レシートから${filled.length}項目を自動入力しました`, 'success');
-      } else {
-        resultText.textContent = 'テキストを読み取れましたが、自動入力可能な項目が見つかりませんでした';
-        resultBanner.style.display = 'flex';
-        this.showToast('レシートの読み取りは完了しましたが、自動入力できませんでした', 'info');
-      }
-
+      const ocrText = result.data.text;
+      console.log('OCR Text:', ocrText);
+      const extracted = this.parseReceiptText(ocrText);
+      console.log('Extracted:', extracted);
+      this.showConfirmScreen(extracted, ocrText);
     } catch (err) {
       console.error('OCR Error:', err);
-      loadingEl.style.display = 'none';
-      this.showToast('レシート読み取りに失敗しました', 'error');
+      this.showToast('読み取りに失敗しました', 'error');
+      this.showExpenseStep('manual');
     }
   },
 
-  // レシートテキストから情報を抽出
+  preprocessImage(imageFile) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const maxDim = 2000;
+        let w = img.width, h = img.height;
+        if (w > maxDim || h > maxDim) {
+          const r = Math.min(maxDim / w, maxDim / h);
+          w = Math.round(w * r); h = Math.round(h * r);
+        }
+        canvas.width = w; canvas.height = h;
+        ctx.drawImage(img, 0, 0, w, h);
+        const id = ctx.getImageData(0, 0, w, h);
+        const d = id.data;
+        for (let i = 0; i < d.length; i += 4) {
+          let g = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
+          g = ((g - 128) * 1.6) + 128;
+          g = Math.max(0, Math.min(255, g));
+          g = g > 140 ? 255 : 0;
+          d[i] = d[i+1] = d[i+2] = g;
+        }
+        ctx.putImageData(id, 0, 0);
+        canvas.toBlob((blob) => resolve(blob), 'image/png');
+      };
+      img.src = URL.createObjectURL(imageFile);
+    });
+  },
+
   parseReceiptText(text) {
     const result = { date: null, amount: null, storeName: null };
     const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
-    // === 金額の抽出 ===
-    // 合計・小計・税込に関する金額を優先
-    const totalPatterns = [
-      /(?:合計|小計|税込|お支払|総計|請求|お会計|TOTAL|Total)[\s:：]*[¥￥]?\s*([\d,]+)/i,
-      /[¥￥]\s*([\d,]+)[\s]*(?:合計|小計|税込|お支払|総計)/i,
-      /(?:合計|小計|税込)[\s\S]{0,10}?([\d,]{3,})\s*円/i,
-    ];
-
-    for (const pattern of totalPatterns) {
-      for (const line of lines) {
-        const match = line.match(pattern);
-        if (match) {
-          const amt = parseInt(match[1].replace(/,/g, ''));
-          if (amt > 0 && amt < 10000000) {
-            result.amount = amt;
-            break;
-          }
-        }
-      }
-      if (result.amount) break;
+    // 金額: 合計キーワード行を優先
+    const totalKw = /合計|小計|税込|お支払|総計|請求|お会計|お買上|TOTAL|Total|total/;
+    for (const line of lines) {
+      if (!totalKw.test(line)) continue;
+      const amounts = [];
+      let m;
+      const p1 = /[¥￥\\]\s*([\d,]+)/g;
+      while ((m = p1.exec(line)) !== null) { const v = parseInt(m[1].replace(/,/g, '')); if (v > 0 && v < 10000000) amounts.push(v); }
+      const p2 = /([\d,]{2,})\s*円/g;
+      while ((m = p2.exec(line)) !== null) { const v = parseInt(m[1].replace(/,/g, '')); if (v > 0 && v < 10000000) amounts.push(v); }
+      const p3 = /(?:合計|小計|税込|お支払|総計|お買上)[\s:：]*(\d[\d,]*)/;
+      m = line.match(p3);
+      if (m) { const v = parseInt(m[1].replace(/,/g, '')); if (v > 0 && v < 10000000) amounts.push(v); }
+      if (amounts.length > 0) { result.amount = Math.max(...amounts); break; }
     }
-
-    // 合計が見つからない場合、最大の金額を採用
     if (!result.amount) {
-      let maxAmount = 0;
-      const amountPattern = /[¥￥]\s*([\d,]+)|(\d{1,3}(?:,\d{3})+)\s*円|([\d,]{3,})\s*円/g;
+      let maxAmt = 0;
       for (const line of lines) {
         let m;
-        while ((m = amountPattern.exec(line)) !== null) {
-          const numStr = (m[1] || m[2] || m[3] || '').replace(/,/g, '');
-          const num = parseInt(numStr);
-          if (num > maxAmount && num < 10000000 && num >= 10) {
-            maxAmount = num;
-          }
-        }
+        const p = /[¥￥\\]\s*([\d,]+)/g;
+        while ((m = p.exec(line)) !== null) { const v = parseInt(m[1].replace(/,/g, '')); if (v > maxAmt && v < 10000000 && v >= 10) maxAmt = v; }
+        const p2 = /([\d,]{3,})\s*円/g;
+        while ((m = p2.exec(line)) !== null) { const v = parseInt(m[1].replace(/,/g, '')); if (v > maxAmt && v < 10000000 && v >= 10) maxAmt = v; }
       }
-      if (maxAmount > 0) result.amount = maxAmount;
+      if (maxAmt > 0) result.amount = maxAmt;
     }
 
-    // === 日付の抽出 ===
-    const datePatterns = [
-      // 2024年1月15日, 2024年01月15日
-      /(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日/,
-      // 2024/01/15, 2024-01-15
-      /(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/,
-      // R6.1.15, R06/01/15, 令和6年1月15日
-      /[RＲ令和]\s*(\d{1,2})[\.\/年]\s*(\d{1,2})[\.\/月]\s*(\d{1,2})/,
+    // 日付
+    const dp = [
+      { re: /(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日/, t: 'jp' },
+      { re: /(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/, t: 'std' },
+      { re: /[RＲ令和]\s*(\d{1,2})[\.\/年\s]\s*(\d{1,2})[\.\/月\s]\s*(\d{1,2})/, t: 'wa' },
     ];
-
-    for (const pattern of datePatterns) {
+    for (const { re, t } of dp) {
       for (const line of lines) {
-        const match = line.match(pattern);
-        if (match) {
-          if (pattern === datePatterns[2]) {
-            // 和暦変換
-            const year = 2018 + parseInt(match[1]);
-            result.date = `${year}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
-          } else {
-            const year = parseInt(match[1]);
-            if (year >= 2000 && year <= 2099) {
-              result.date = `${year}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
-            }
-          }
-          if (result.date) break;
+        const m = line.match(re);
+        if (!m) continue;
+        let y, mo, d;
+        if (t === 'wa') { y = 2018 + parseInt(m[1]); mo = m[2]; d = m[3]; }
+        else { y = parseInt(m[1]); mo = m[2]; d = m[3]; }
+        if (y >= 2000 && y <= 2099 && parseInt(mo) >= 1 && parseInt(mo) <= 12 && parseInt(d) >= 1 && parseInt(d) <= 31) {
+          result.date = `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+          break;
         }
       }
       if (result.date) break;
     }
 
-    // === 店舗名の抽出 ===
-    // レシートの最初の数行から店舗名を推定（数字や記号だけの行は除外）
-    const skipPatterns = /^[\d\s\-\/\.\:¥￥円%=\*]+$|^TEL|^電話|^〒|^\d{3}-|^http|^www|^レシート|^領収/i;
-    for (let i = 0; i < Math.min(lines.length, 6); i++) {
-      const line = lines[i];
-      if (line.length >= 2 && line.length <= 40 && !skipPatterns.test(line)) {
-        // 店舗名らしい行を採用
-        result.storeName = line.replace(/[\s　]+/g, ' ').trim();
-        break;
+    // 店舗名
+    const skip = /^[\d\s\-\/\.\:¥￥円%=\*#\+\(\)（）]+$|^TEL|^電話|^〒|^\d{3}-|^http|^www|^レシート|^領収|^━|^─|^-{3}/i;
+    const storeKw = /店|株式会社|有限会社|ストア|マート|STORE|SHOP|Co\.|Inc/i;
+    for (let i = 0; i < Math.min(lines.length, 8); i++) {
+      if (lines[i].length >= 2 && lines[i].length <= 50 && storeKw.test(lines[i]) && !skip.test(lines[i])) {
+        result.storeName = lines[i].replace(/[\s　]+/g, ' ').trim(); break;
       }
     }
-
+    if (!result.storeName) {
+      for (let i = 0; i < Math.min(lines.length, 5); i++) {
+        if (lines[i].length >= 2 && lines[i].length <= 40 && !skip.test(lines[i]) && !/^\d{4}[\/\-]/.test(lines[i])) {
+          result.storeName = lines[i].replace(/[\s　]+/g, ' ').trim(); break;
+        }
+      }
+    }
     return result;
   },
 
-  resetReceiptPreview() {
-    document.getElementById('expense-receipt').value = '';
-    document.getElementById('receipt-preview').style.display = 'none';
-    document.querySelector('#receipt-upload-area .file-upload-content').style.display = '';
-    document.getElementById('ocr-loading').style.display = 'none';
-    document.getElementById('ocr-result-banner').style.display = 'none';
+  showConfirmScreen(extracted, ocrText) {
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('confirm-date').value = extracted.date || today;
+    document.getElementById('confirm-amount').value = extracted.amount || '';
+    document.getElementById('confirm-description').value = extracted.storeName || '';
+    document.getElementById('confirm-receipt-img').src = this.currentReceiptDataUrl;
+    const cat = this.suggestCategory(extracted.storeName || ocrText || '');
+    document.querySelectorAll('#confirm-category-grid .confirm-category-chip').forEach(c =>
+      c.classList.toggle('selected', c.dataset.cat === cat)
+    );
+    this.showExpenseStep('confirm');
+  },
+
+  async saveFromConfirm() {
+    const date = document.getElementById('confirm-date').value;
+    const amount = document.getElementById('confirm-amount').value;
+    const description = document.getElementById('confirm-description').value;
+    const selChip = document.querySelector('#confirm-category-grid .confirm-category-chip.selected');
+    const category = selChip ? selChip.dataset.cat : 'misc';
+    if (!date || !amount) { this.showToast('日付と金額は必須です', 'error'); return; }
+
+    const fd = new FormData();
+    fd.append('date', date); fd.append('amount', amount);
+    fd.append('category', category); fd.append('description', description);
+    fd.append('source', 'ocr');
+    if (this.currentReceiptFile) fd.append('receipt', this.currentReceiptFile);
+
+    const btn = document.getElementById('btn-save-expense');
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<span class="scanning-dot" style="display:inline-block"></span> 保存中...';
+    btn.disabled = true;
+
+    try {
+      const res = await fetch(BASE + '/api/expense', { method: 'POST', body: fd });
+      if (!res.ok) throw new Error('保存に失敗しました');
+      btn.innerHTML = orig; btn.disabled = false;
+      this.showSuccessScreen(amount, description, category);
+    } catch (err) {
+      btn.innerHTML = orig; btn.disabled = false;
+      this.showToast(err.message, 'error');
+    }
+  },
+
+  showSuccessScreen(amount, description, category) {
+    const cn = this.categoryNames[category] || category;
+    const ce = this.categoryEmojis[category] || '';
+    document.getElementById('success-summary').textContent =
+      `¥${parseInt(amount).toLocaleString()} · ${description || cn} · ${ce} ${cn}`;
+    this.showExpenseStep('success');
+    this.createConfetti();
+    this.loadDashboard();
+  },
+
+  createConfetti() {
+    const c = document.getElementById('success-particles');
+    c.innerHTML = '';
+    const colors = ['#6366f1','#8b5cf6','#10b981','#f59e0b','#ec4899','#06b6d4','#f43f5e'];
+    for (let i = 0; i < 30; i++) {
+      const p = document.createElement('div');
+      p.className = 'confetti';
+      p.style.cssText = `left:${40+Math.random()*20}%;top:50%;background:${colors[Math.floor(Math.random()*colors.length)]};--dx:${(Math.random()-0.5)*200}px;--dy:${-80-Math.random()*160}px;--rot:${Math.random()*720-360}deg;--dur:${0.8+Math.random()*0.8}s;--delay:${Math.random()*0.3}s;width:${4+Math.random()*6}px;height:${4+Math.random()*6}px;border-radius:${Math.random()>0.5?'50%':'2px'};`;
+      c.appendChild(p);
+    }
   },
 
   // フィルター設定
@@ -1138,7 +1226,7 @@ const App = {
 
     const tbody = document.getElementById('csv-preview-body');
     tbody.innerHTML = rows.map((row, idx) => `
-      <tr data-idx="${idx}">
+      <tr data-idx="${idx}" style="--row-idx:${idx};animation:csv-row-in 0.35s ease both;animation-delay:calc(var(--row-idx)*0.03s)">
         <td style="text-align:center;"><input type="checkbox" class="csv-row-check" data-idx="${idx}" checked></td>
         <td class="csv-date">${this.escapeHtml(row.date)}</td>
         <td class="csv-amount">¥${Math.abs(row.amount).toLocaleString()}</td>
@@ -1200,10 +1288,23 @@ const App = {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '取込に失敗しました');
 
+      // 成功演出をモーダル内で表示
+      document.getElementById('csv-step-preview').innerHTML = `
+        <div class="csv-success-overlay">
+          <div class="success-check-wrap">
+            <svg class="success-checkmark" viewBox="0 0 52 52">
+              <circle class="success-circle" cx="26" cy="26" r="25" fill="none"/>
+              <path class="success-check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
+            </svg>
+          </div>
+          <h3>${data.imported}件の経費を取り込みました</h3>
+          <p>勘定科目は自動推定されています</p>
+        </div>
+      `;
       this.showToast(`${data.imported}件の経費を取り込みました`, 'success');
-      this.closeCsvModal();
       this.csvPreviewData = [];
       this.loadDashboard();
+      setTimeout(() => this.closeCsvModal(), 2200);
     } catch (err) {
       this.showToast(err.message, 'error');
     }

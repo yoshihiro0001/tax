@@ -222,114 +222,172 @@
         </div>
       </section>
 
-      <!-- 経費入力ビュー -->
+      <!-- 経費入力ビュー (Photo-First Design) -->
       <section class="view" id="view-expense">
-        <div class="view-header">
-          <div>
-            <h1 class="view-title">経費を記録</h1>
-            <p class="view-subtitle">新しい経費を入力してください</p>
+
+        <!-- ===== Step 1: カメラ撮影 ===== -->
+        <div class="expense-step active" id="expense-capture">
+          <div class="capture-hero">
+            <div class="capture-header-text">
+              <h1 class="capture-title">経費を記録</h1>
+              <p class="capture-subtitle">レシートを撮影するだけで<br>日付・金額・科目を自動入力</p>
+            </div>
+            <label class="capture-ring" for="expense-receipt-capture">
+              <input type="file" id="expense-receipt-capture" accept="image/*" capture="environment" class="sr-only">
+              <div class="capture-ring-glow"></div>
+              <div class="capture-ring-border"></div>
+              <div class="capture-ring-inner">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                  <circle cx="12" cy="13" r="4"/>
+                </svg>
+              </div>
+            </label>
+            <p class="capture-cta">タップしてレシートを撮影</p>
+            <p class="capture-sub-hint">画像ライブラリからも選択できます</p>
+          </div>
+          <div class="capture-divider"><span>または</span></div>
+          <button type="button" class="btn-manual-entry" id="btn-manual-input">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            手動で入力する
+          </button>
+        </div>
+
+        <!-- ===== Step 2: OCRスキャン中 ===== -->
+        <div class="expense-step" id="expense-scanning">
+          <div class="scanning-container">
+            <div class="scanning-image-wrap">
+              <img id="scanning-receipt-img" alt="">
+              <div class="scan-line"></div>
+              <div class="scan-corners">
+                <span class="scan-corner tl"></span>
+                <span class="scan-corner tr"></span>
+                <span class="scan-corner bl"></span>
+                <span class="scan-corner br"></span>
+              </div>
+            </div>
+            <div class="scanning-info">
+              <div class="scanning-badge">
+                <span class="scanning-dot"></span>
+                <span id="scanning-status-text">読み取り中...</span>
+              </div>
+              <div class="scanning-progress-track">
+                <div class="scanning-progress-fill" id="scanning-progress-fill"></div>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div class="form-card">
-          <form id="form-expense" class="form">
-            <div class="form-group">
-              <label class="form-label" for="expense-date">日付</label>
-              <input type="date" id="expense-date" class="form-input" required>
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="expense-amount">金額（円）</label>
-              <div class="input-with-prefix">
-                <span class="input-prefix">¥</span>
-                <input type="number" id="expense-amount" class="form-input" placeholder="0" inputmode="numeric" required>
+        <!-- ===== Step 3: 確認・編集 ===== -->
+        <div class="expense-step" id="expense-confirm">
+          <div class="confirm-header-section">
+            <span class="confirm-badge-anim">✨ 読み取り完了</span>
+            <h1 class="confirm-title">内容を確認してください</h1>
+            <p class="confirm-subtitle">タップで修正できます</p>
+          </div>
+          <div class="confirm-card">
+            <div class="confirm-receipt-col">
+              <div class="confirm-receipt-frame">
+                <img id="confirm-receipt-img" alt="レシート">
               </div>
             </div>
-            <div class="form-group">
-              <label class="form-label" for="expense-category">勘定科目</label>
-              <div class="category-grid" id="category-grid">
-                <label class="category-chip">
-                  <input type="radio" name="category" value="outsourcing">
-                  <span class="chip-content"><span class="chip-emoji">👨‍💻</span>外注工賃</span>
-                </label>
-                <label class="category-chip">
-                  <input type="radio" name="category" value="travel">
-                  <span class="chip-content"><span class="chip-emoji">🚃</span>旅費交通費</span>
-                </label>
-                <label class="category-chip">
-                  <input type="radio" name="category" value="communication">
-                  <span class="chip-content"><span class="chip-emoji">📱</span>通信費</span>
-                </label>
-                <label class="category-chip">
-                  <input type="radio" name="category" value="supplies">
-                  <span class="chip-content"><span class="chip-emoji">🖊️</span>消耗品費</span>
-                </label>
-                <label class="category-chip">
-                  <input type="radio" name="category" value="advertising">
-                  <span class="chip-content"><span class="chip-emoji">📢</span>広告宣伝費</span>
-                </label>
-                <label class="category-chip">
-                  <input type="radio" name="category" value="entertainment">
-                  <span class="chip-content"><span class="chip-emoji">🍽️</span>接待交際費</span>
-                </label>
-                <label class="category-chip">
-                  <input type="radio" name="category" value="depreciation">
-                  <span class="chip-content"><span class="chip-emoji">💻</span>減価償却費</span>
-                </label>
-                <label class="category-chip">
-                  <input type="radio" name="category" value="home_office">
-                  <span class="chip-content"><span class="chip-emoji">🏠</span>家事按分</span>
-                </label>
-                <label class="category-chip">
-                  <input type="radio" name="category" value="fees">
-                  <span class="chip-content"><span class="chip-emoji">🏦</span>支払手数料</span>
-                </label>
-                <label class="category-chip">
-                  <input type="radio" name="category" value="misc" checked>
-                  <span class="chip-content"><span class="chip-emoji">📦</span>雑費</span>
-                </label>
+            <div class="confirm-fields-col">
+              <div class="confirm-field" style="--i:0">
+                <label class="confirm-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> 日付</label>
+                <input type="date" id="confirm-date" class="confirm-input">
               </div>
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="expense-description">摘要</label>
-              <input type="text" id="expense-description" class="form-input" placeholder="例: 電車代 渋谷→新宿">
-            </div>
-            <div class="form-group">
-              <label class="form-label">レシート画像（自動読取対応）</label>
-              <div class="file-upload-area" id="receipt-upload-area">
-                <input type="file" id="expense-receipt" accept="image/*" capture="environment" class="file-input">
-                <div class="file-upload-content">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="upload-icon"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-                  <span class="upload-text">タップして撮影 / 画像を選択</span>
-                  <span class="upload-hint">OCRで日付・金額・科目を自動入力</span>
-                </div>
-                <div class="file-preview" id="receipt-preview" style="display:none;">
-                  <img id="receipt-preview-img" alt="レシート">
-                  <button type="button" class="btn-remove-file" id="btn-remove-receipt">&times;</button>
-                </div>
-                <!-- OCR読取中オーバーレイ -->
-                <div class="ocr-loading-overlay" id="ocr-loading" style="display:none;">
-                  <div class="ocr-loading-content">
-                    <div class="ocr-spinner"></div>
-                    <span class="ocr-loading-text" id="ocr-loading-text">レシートを読み取り中...</span>
-                    <div class="ocr-progress-bar">
-                      <div class="ocr-progress-fill" id="ocr-progress-fill"></div>
-                    </div>
-                  </div>
+              <div class="confirm-field" style="--i:1">
+                <label class="confirm-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><line x1="12" y1="18" x2="12" y2="6"/></svg> 金額</label>
+                <div class="confirm-amount-wrap">
+                  <span class="confirm-yen">¥</span>
+                  <input type="number" id="confirm-amount" class="confirm-input confirm-input-amount" placeholder="0" inputmode="numeric">
                 </div>
               </div>
-              <!-- OCR結果バナー -->
-              <div class="ocr-result-banner" id="ocr-result-banner" style="display:none;">
-                <div class="ocr-result-icon">✨</div>
-                <div class="ocr-result-text" id="ocr-result-text">レシートから自動入力しました</div>
-                <button type="button" class="ocr-result-close" id="ocr-result-close">&times;</button>
+              <div class="confirm-field" style="--i:2">
+                <label class="confirm-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg> 摘要</label>
+                <input type="text" id="confirm-description" class="confirm-input" placeholder="店舗名・内容">
+              </div>
+              <div class="confirm-field confirm-field-category" style="--i:3">
+                <label class="confirm-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg> 勘定科目</label>
+                <div class="confirm-category-grid" id="confirm-category-grid"></div>
               </div>
             </div>
-            <button type="submit" class="btn btn-primary btn-lg btn-full">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              経費を保存
+          </div>
+          <div class="confirm-actions">
+            <button type="button" class="btn btn-outline btn-press" id="btn-retake">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+              撮り直す
             </button>
-          </form>
+            <button type="button" class="btn btn-save-hero btn-press" id="btn-save-expense">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              保存する
+            </button>
+          </div>
         </div>
+
+        <!-- ===== Step 4: 保存完了 ===== -->
+        <div class="expense-step" id="expense-success">
+          <div class="success-container">
+            <div class="success-particles" id="success-particles"></div>
+            <div class="success-check-wrap">
+              <svg class="success-checkmark" viewBox="0 0 52 52">
+                <circle class="success-circle" cx="26" cy="26" r="25" fill="none"/>
+                <path class="success-check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
+              </svg>
+            </div>
+            <h2 class="success-title">保存しました！</h2>
+            <p class="success-summary" id="success-summary"></p>
+            <div class="success-actions">
+              <button type="button" class="btn btn-save-hero btn-press" id="btn-capture-another">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                もう1枚撮る
+              </button>
+              <button type="button" class="btn btn-outline btn-press" id="btn-to-dashboard">ダッシュボードへ</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== Step 5: 手動入力フォーム ===== -->
+        <div class="expense-step" id="expense-manual">
+          <div class="view-header">
+            <div>
+              <h1 class="view-title">手動で入力</h1>
+              <p class="view-subtitle"><a href="#" class="link" id="btn-back-to-capture">← レシート撮影に戻る</a></p>
+            </div>
+          </div>
+          <div class="form-card">
+            <form id="form-expense" class="form">
+              <div class="form-group"><label class="form-label" for="expense-date">日付</label><input type="date" id="expense-date" class="form-input" required></div>
+              <div class="form-group"><label class="form-label" for="expense-amount">金額（円）</label><div class="input-with-prefix"><span class="input-prefix">¥</span><input type="number" id="expense-amount" class="form-input" placeholder="0" inputmode="numeric" required></div></div>
+              <div class="form-group">
+                <label class="form-label">勘定科目</label>
+                <div class="category-grid" id="category-grid">
+                  <label class="category-chip"><input type="radio" name="category" value="outsourcing"><span class="chip-content"><span class="chip-emoji">👨‍💻</span>外注工賃</span></label>
+                  <label class="category-chip"><input type="radio" name="category" value="travel"><span class="chip-content"><span class="chip-emoji">🚃</span>旅費交通費</span></label>
+                  <label class="category-chip"><input type="radio" name="category" value="communication"><span class="chip-content"><span class="chip-emoji">📱</span>通信費</span></label>
+                  <label class="category-chip"><input type="radio" name="category" value="supplies"><span class="chip-content"><span class="chip-emoji">🖊️</span>消耗品費</span></label>
+                  <label class="category-chip"><input type="radio" name="category" value="advertising"><span class="chip-content"><span class="chip-emoji">📢</span>広告宣伝費</span></label>
+                  <label class="category-chip"><input type="radio" name="category" value="entertainment"><span class="chip-content"><span class="chip-emoji">🍽️</span>接待交際費</span></label>
+                  <label class="category-chip"><input type="radio" name="category" value="depreciation"><span class="chip-content"><span class="chip-emoji">💻</span>減価償却費</span></label>
+                  <label class="category-chip"><input type="radio" name="category" value="home_office"><span class="chip-content"><span class="chip-emoji">🏠</span>家事按分</span></label>
+                  <label class="category-chip"><input type="radio" name="category" value="fees"><span class="chip-content"><span class="chip-emoji">🏦</span>支払手数料</span></label>
+                  <label class="category-chip"><input type="radio" name="category" value="misc" checked><span class="chip-content"><span class="chip-emoji">📦</span>雑費</span></label>
+                </div>
+              </div>
+              <div class="form-group"><label class="form-label" for="expense-description">摘要</label><input type="text" id="expense-description" class="form-input" placeholder="例: 電車代 渋谷→新宿"></div>
+              <div class="form-group">
+                <label class="form-label">レシート画像（任意）</label>
+                <div class="file-upload-area" id="manual-receipt-area">
+                  <input type="file" id="expense-receipt" accept="image/*" class="file-input">
+                  <div class="file-upload-content"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="upload-icon"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span class="upload-text">画像を添付</span></div>
+                  <div class="file-preview" id="manual-receipt-preview" style="display:none;"><img id="manual-receipt-preview-img" alt="レシート"><button type="button" class="btn-remove-file" id="btn-remove-manual-receipt">&times;</button></div>
+                </div>
+              </div>
+              <button type="submit" class="btn btn-primary btn-lg btn-full btn-press"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> 経費を保存</button>
+            </form>
+          </div>
+        </div>
+
       </section>
 
       <!-- 取引履歴ビュー -->
