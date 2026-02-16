@@ -384,7 +384,7 @@ body { min-height: 100dvh; }
 .admin-kpi-num.kpi-gold { color: #d97706; }
 .admin-kpi-label { font-size: 10px; color: var(--text3); font-weight: 500; margin-top: 2px; display: block; }
 
-/* DAUチャート */
+/* 日別利用者チャート */
 .admin-chart-wrap { height: 180px; position: relative; }
 
 /* カードヘッダ (タイトル + バッジ) */
@@ -475,6 +475,83 @@ body { min-height: 100dvh; }
 .storage-bar-fill { height: 100%; border-radius: 4px; transition: width .6s cubic-bezier(.22,1,.36,1); }
 .storage-bar-fill.db { background: var(--pri); }
 .storage-bar-fill.img { background: var(--green); }
+
+/* ストレージ: 全体サマリー */
+.storage-summary { text-align: center; margin-bottom: 16px; padding: 16px; background: var(--bg); border-radius: var(--radius-sm); }
+.storage-summary-val { font-size: 28px; font-weight: 800; display: block; color: var(--pri); }
+.storage-summary-label { font-size: 11px; color: var(--text3); }
+
+/* ストレージ: 1人あたり平均 */
+.storage-per-user { margin-top: 16px; padding: 14px; background: var(--bg); border-radius: var(--radius-sm); }
+.storage-per-user-title { font-size: 12px; font-weight: 700; margin-bottom: 10px; text-align: center; }
+.storage-per-user-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.storage-per-user-item { text-align: center; padding: 8px; background: var(--card); border-radius: var(--radius-xs); }
+.storage-per-user-val { font-size: 15px; font-weight: 800; display: block; }
+.storage-per-user-label { font-size: 10px; color: var(--text3); }
+
+/* ストレージ: コスト試算ヒント */
+.storage-cost-hint {
+  display: flex; align-items: center; gap: 8px; margin-top: 14px;
+  padding: 10px 12px; background: #fffbeb; border: 1px solid #fde68a; border-radius: var(--radius-sm);
+  font-size: 11px; color: #92400e; line-height: 1.5;
+}
+.storage-cost-icon { font-size: 16px; flex-shrink: 0; }
+
+/* ユーザー行: 最終利用 */
+.au-last { font-size: 10px; color: var(--text3); margin-top: 1px; }
+
+/* ユーザー行: タップ可能 */
+.au-item { cursor: pointer; transition: background .15s; }
+.au-item:active { background: var(--bg); }
+
+/* ============================================
+   ユーザー詳細パネル（展開式）
+   ============================================ */
+.au-detail {
+  margin: 0 0 8px; padding: 14px 16px; background: var(--bg); border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  border-top: 2px solid var(--pri-bg); animation: slide-down .25s ease;
+}
+@keyframes slide-down { from { opacity: 0; max-height: 0; } to { opacity: 1; max-height: 600px; } }
+.au-detail-loading { display: flex; justify-content: center; padding: 20px; }
+.aud-section { margin-bottom: 14px; }
+.aud-section:last-child { margin-bottom: 0; }
+.aud-title { font-size: 11px; font-weight: 700; color: var(--text3); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .5px; }
+.aud-storage-total { font-size: 24px; font-weight: 800; color: var(--pri); text-align: center; padding: 8px 0; }
+.aud-empty { font-size: 12px; color: var(--text3); text-align: center; padding: 8px; }
+
+/* 帳簿別 */
+.aud-book { padding: 8px 10px; background: var(--card); border-radius: var(--radius-xs); margin-bottom: 6px; }
+.aud-book-head { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.aud-book-stats { display: flex; flex-wrap: wrap; gap: 8px; font-size: 11px; color: var(--text2); }
+
+/* 月別バー */
+.aud-month { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.aud-month-label { width: 28px; font-size: 11px; font-weight: 600; text-align: right; flex-shrink: 0; }
+.aud-month-bar { flex: 1; height: 6px; background: var(--card); border-radius: 3px; overflow: hidden; }
+.aud-month-fill { display: block; height: 100%; background: var(--pri); border-radius: 3px; transition: width .4s ease; }
+.aud-month-num { width: 32px; font-size: 10px; color: var(--text3); text-align: right; flex-shrink: 0; }
+
+/* 最近の操作 */
+.aud-act { display: flex; gap: 8px; padding: 3px 0; font-size: 11px; border-bottom: 1px solid var(--border); }
+.aud-act:last-child { border-bottom: none; }
+.aud-act-time { color: var(--text3); flex-shrink: 0; width: 60px; }
+.aud-act-text { color: var(--text2); }
+
+/* ============================================
+   ランキング
+   ============================================ */
+.rank-section { margin-bottom: 18px; }
+.rank-section:last-child { margin-bottom: 0; }
+.rank-title { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+.rank-row { display: flex; align-items: center; gap: 6px; padding: 6px 0; border-bottom: 1px solid var(--border); animation: tx-in .3s both; }
+.rank-row:last-child { border-bottom: none; }
+.rank-medal { width: 24px; text-align: center; font-size: 16px; flex-shrink: 0; }
+.rank-num { font-size: 11px; font-weight: 700; color: var(--text3); }
+.rank-name { width: 60px; font-size: 12px; font-weight: 600; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank-bar { flex: 1; height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; }
+.rank-fill { display: block; height: 100%; background: var(--green); border-radius: 4px; transition: width .6s cubic-bezier(.22,1,.36,1); }
+.rank-fill-blue { background: var(--pri); }
+.rank-val { width: 56px; font-size: 11px; font-weight: 600; text-align: right; flex-shrink: 0; color: var(--text2); }
 
 /* ============================================
    取引履歴ビュー

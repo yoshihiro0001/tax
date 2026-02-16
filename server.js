@@ -683,11 +683,16 @@ router.get('/api/admin/dashboard', auth, adminOnly, (req, res) => {
     // --- 最近のアクティビティ (最新30件) ---
     const recentActivity = db.prepare("SELECT a.*, u.name as user_name, u.email as user_email FROM activity_logs a LEFT JOIN users u ON a.user_id = u.id ORDER BY a.created_at DESC LIMIT 30").all();
 
-    // --- ユーザー一覧 ---
+    // --- ユーザー一覧（ストレージ情報付き） ---
     const users = db.prepare("SELECT id, email, name, avatar_url, auth_provider, role, plan, created_at FROM users ORDER BY created_at DESC").all().map(u => {
       const lastAct = db.prepare('SELECT created_at FROM activity_logs WHERE user_id = ? ORDER BY created_at DESC LIMIT 1').get(u.id);
       const records = db.prepare("SELECT (SELECT COUNT(*) FROM income i JOIN books b ON i.book_id=b.id WHERE b.user_id=?) + (SELECT COUNT(*) FROM expenses e JOIN books b ON e.book_id=b.id WHERE b.user_id=?) as c").get(u.id, u.id);
-      return { ...u, lastActivity: lastAct?.created_at || null, totalRecords: records.c };
+      const bookCount = db.prepare("SELECT COUNT(*) as c FROM books WHERE user_id=?").get(u.id).c;
+      const receipts = db.prepare("SELECT e.receipt_path FROM expenses e JOIN books b ON e.book_id=b.id WHERE b.user_id=? AND e.receipt_path IS NOT NULL AND e.receipt_path != ''").all(u.id);
+      let receiptSizeKB = 0;
+      receipts.forEach(r => { try { receiptSizeKB += fs.statSync(r.receipt_path.startsWith('/') ? r.receipt_path : `./${r.receipt_path}`).size; } catch {} });
+      receiptSizeKB = Math.round(receiptSizeKB / 1024);
+      return { ...u, lastActivity: lastAct?.created_at || null, totalRecords: records.c, bookCount, receiptCount: receipts.length, receiptSizeKB };
     });
 
     // --- 日別アクティブユーザー推移 (過去14日) ---
@@ -709,6 +714,46 @@ router.get('/api/admin/dashboard', auth, adminOnly, (req, res) => {
       dailyActive
     });
   } catch (err) { logError(err.message, '/api/admin/dashboard', req.userId, err.stack); res.status(500).json({ error: err.message }); }
+});
+
+// ユーザー個別詳細（帳簿別内訳・月別推移）
+router.get('/api/admin/user/:id/detail', auth, adminOnly, (req, res) => {
+  try {
+    const uid = parseInt(req.params.id);
+    const user = db.prepare("SELECT id, email, name, avatar_url, role, plan, created_at FROM users WHERE id=?").get(uid);
+    if (!user) return res.status(404).json({ error: 'ユーザーが見つかりません' });
+
+    const books = db.prepare('SELECT id, name, emoji FROM books WHERE user_id=?').all(uid);
+    const booksDetail = books.map(b => {
+      const ic = db.prepare('SELECT COUNT(*) as c, COALESCE(SUM(amount),0) as t FROM income WHERE book_id=?').get(b.id);
+      const ec = db.prepare('SELECT COUNT(*) as c, COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=?').get(b.id);
+      const receipts = db.prepare("SELECT receipt_path FROM expenses WHERE book_id=? AND receipt_path IS NOT NULL AND receipt_path != ''").all(b.id);
+      let receiptSizeKB = 0;
+      receipts.forEach(r => { try { receiptSizeKB += fs.statSync(r.receipt_path.startsWith('/') ? r.receipt_path : `./${r.receipt_path}`).size; } catch {} });
+      receiptSizeKB = Math.round(receiptSizeKB / 1024);
+      return { ...b, incomeCount: ic.c, incomeTotal: ic.t, expenseCount: ec.c, expenseTotal: ec.t, receiptCount: receipts.length, receiptSizeKB };
+    });
+
+    // 月別入力推移（過去6ヶ月）
+    const monthly = [];
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      const bookIds = books.map(b => b.id);
+      let incC = 0, expC = 0;
+      for (const bid of bookIds) {
+        incC += db.prepare("SELECT COUNT(*) as c FROM income WHERE book_id=? AND date LIKE ?").get(bid, ym + '%').c;
+        expC += db.prepare("SELECT COUNT(*) as c FROM expenses WHERE book_id=? AND date LIKE ?").get(bid, ym + '%').c;
+      }
+      monthly.push({ month: ym, income: incC, expense: expC });
+    }
+
+    // 最近のアクティビティ
+    const recentActs = db.prepare("SELECT action, details, created_at FROM activity_logs WHERE user_id=? ORDER BY created_at DESC LIMIT 10").all(uid);
+
+    res.json({ user, books: booksDetail, monthly, recentActivity: recentActs });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // エラーログ詳細

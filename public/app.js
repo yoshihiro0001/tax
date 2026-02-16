@@ -684,22 +684,22 @@ const App = {
       const um = d.userMetrics;
       const us = d.usage;
       qs('#admin-kpi-cards').innerHTML = `
-        <div class="admin-kpi-item"><span class="admin-kpi-num">${um.totalUsers}</span><span class="admin-kpi-label">総ユーザー</span></div>
-        <div class="admin-kpi-item"><span class="admin-kpi-num kpi-green">${um.newUsersWeek}</span><span class="admin-kpi-label">新規 (7日)</span></div>
-        <div class="admin-kpi-item"><span class="admin-kpi-num kpi-blue">${um.activeUsersToday}</span><span class="admin-kpi-label">今日のDAU</span></div>
-        <div class="admin-kpi-item"><span class="admin-kpi-num">${um.activeUsersWeek}</span><span class="admin-kpi-label">WAU (7日)</span></div>
-        <div class="admin-kpi-item"><span class="admin-kpi-num">${us.txToday}</span><span class="admin-kpi-label">取引 (今日)</span></div>
-        <div class="admin-kpi-item"><span class="admin-kpi-num">${us.txWeek}</span><span class="admin-kpi-label">取引 (7日)</span></div>
-        <div class="admin-kpi-item"><span class="admin-kpi-num">${us.ocrToday}</span><span class="admin-kpi-label">OCR (今日)</span></div>
+        <div class="admin-kpi-item"><span class="admin-kpi-num">${um.totalUsers}</span><span class="admin-kpi-label">登録者数</span></div>
+        <div class="admin-kpi-item"><span class="admin-kpi-num kpi-green">${um.newUsersWeek}</span><span class="admin-kpi-label">新規登録 (7日)</span></div>
+        <div class="admin-kpi-item"><span class="admin-kpi-num kpi-blue">${um.activeUsersToday}</span><span class="admin-kpi-label">今日の利用者</span></div>
+        <div class="admin-kpi-item"><span class="admin-kpi-num">${um.activeUsersWeek}</span><span class="admin-kpi-label">7日間の利用者</span></div>
+        <div class="admin-kpi-item"><span class="admin-kpi-num">${us.txToday}</span><span class="admin-kpi-label">今日の入力数</span></div>
+        <div class="admin-kpi-item"><span class="admin-kpi-num">${us.txWeek}</span><span class="admin-kpi-label">7日間の入力数</span></div>
+        <div class="admin-kpi-item"><span class="admin-kpi-num">${us.ocrToday}</span><span class="admin-kpi-label">レシート読取 (今日)</span></div>
         <div class="admin-kpi-item"><span class="admin-kpi-num">${us.csvToday}</span><span class="admin-kpi-label">CSV取込 (今日)</span></div>
-        <div class="admin-kpi-item"><span class="admin-kpi-num">${us.totalRecords}</span><span class="admin-kpi-label">総レコード数</span></div>
-        <div class="admin-kpi-item"><span class="admin-kpi-num">${um.planCounts.free || 0}</span><span class="admin-kpi-label">Free</span></div>
-        <div class="admin-kpi-item"><span class="admin-kpi-num kpi-purple">${um.planCounts.pro || 0}</span><span class="admin-kpi-label">Pro</span></div>
-        <div class="admin-kpi-item"><span class="admin-kpi-num kpi-gold">${um.planCounts.business || 0}</span><span class="admin-kpi-label">Business</span></div>
+        <div class="admin-kpi-item"><span class="admin-kpi-num">${us.totalRecords}</span><span class="admin-kpi-label">全データ件数</span></div>
+        <div class="admin-kpi-item"><span class="admin-kpi-num">${um.planCounts.free || 0}</span><span class="admin-kpi-label">無料プラン</span></div>
+        <div class="admin-kpi-item"><span class="admin-kpi-num kpi-purple">${um.planCounts.pro || 0}</span><span class="admin-kpi-label">Proプラン</span></div>
+        <div class="admin-kpi-item"><span class="admin-kpi-num kpi-gold">${um.planCounts.business || 0}</span><span class="admin-kpi-label">法人プラン</span></div>
       `;
       qs('#admin-kpi-section').style.display = '';
 
-      // --- DAUチャート ---
+      // --- 日別利用者チャート ---
       this.renderAdminChart(d.dailyActive);
       qs('#admin-chart-section').style.display = '';
 
@@ -758,43 +758,46 @@ const App = {
       qs('#admin-activity-section').style.display = '';
 
       // --- ユーザー管理 ---
-      qs('#admin-users-list').innerHTML = d.users.map((u, i) => {
-        const avatar = u.avatar_url ? `<img src="${u.avatar_url}" alt="" class="au-avatar-img">` : `<span class="au-avatar-letter">${this.esc(u.name.charAt(0).toUpperCase())}</span>`;
-        const lastAct = u.lastActivity ? u.lastActivity.slice(5, 16).replace('T', ' ') : '未使用';
-        return `
-          <div class="au-item" style="--i:${i}">
-            <div class="au-avatar">${avatar}</div>
-            <div class="au-info">
-              <div class="au-name">${this.esc(u.name)}<span class="au-role-badge au-role-${u.role}">${u.role === 'admin' ? '管理者' : 'ユーザー'}</span></div>
-              <div class="au-email">${this.esc(u.email)}</div>
-              <div class="au-stats">${u.totalRecords}件のレコード ・ 最終: ${lastAct}</div>
-            </div>
-            <div class="au-controls">
-              <select class="au-select" data-uid="${u.id}" data-field="role"><option value="user"${u.role==='user'?' selected':''}>ユーザー</option><option value="admin"${u.role==='admin'?' selected':''}>管理者</option></select>
-              <select class="au-select" data-uid="${u.id}" data-field="plan"><option value="free"${(u.plan||'free')==='free'?' selected':''}>Free</option><option value="pro"${u.plan==='pro'?' selected':''}>Pro</option><option value="business"${u.plan==='business'?' selected':''}>Business</option></select>
-            </div>
-          </div>`;
-      }).join('');
-      qs('#admin-users-list').querySelectorAll('.au-select').forEach(sel => {
-        sel.addEventListener('change', async () => {
-          const body = {}; body[sel.dataset.field] = sel.value;
-          try {
-            await this.api(`/api/admin/user/${sel.dataset.uid}`, { method: 'PUT', body: JSON.stringify(body) });
-            this.toast(`${sel.dataset.field === 'role' ? '権限' : 'プラン'}を変更しました`, 'success');
-          } catch (err) { this.toast(err.message, 'error'); }
-        });
-      });
+      this._adminUsers = d.users;
+      this.renderAdminUserList(d.users);
       qs('#admin-users-section').style.display = '';
+
+      // --- ランキング ---
+      this.renderStorageRanking(d.users);
+      qs('#admin-ranking-section').style.display = '';
 
       // --- ストレージ ---
       const dbMB = sys.dbSizeKB < 1024 ? `${sys.dbSizeKB} KB` : `${(sys.dbSizeKB/1024).toFixed(1)} MB`;
       const imgMB = (sys.receiptSizeKB / 1024).toFixed(1);
       const totalKB = sys.dbSizeKB + sys.receiptSizeKB;
+      const totalMB = (totalKB / 1024).toFixed(1);
+      const totalGB = (totalKB / 1024 / 1024).toFixed(2);
       const dbPct = totalKB ? Math.round(sys.dbSizeKB / totalKB * 100) : 0;
       const imgPct = totalKB ? Math.round(sys.receiptSizeKB / totalKB * 100) : 0;
+      const userCount = um.totalUsers || 1;
+      const perUserKB = Math.round(totalKB / userCount);
+      const perUserTxt = perUserKB >= 1024 ? `${(perUserKB/1024).toFixed(1)} MB` : `${perUserKB} KB`;
+      const perUserReceiptKB = Math.round(sys.receiptSizeKB / userCount);
+      const perUserReceiptTxt = perUserReceiptKB >= 1024 ? `${(perUserReceiptKB/1024).toFixed(1)} MB` : `${perUserReceiptKB} KB`;
       qs('#admin-storage').innerHTML = `
-        <div class="storage-bar-wrap"><div class="storage-bar-label"><span class="storage-bar-name">DB</span><span class="storage-bar-val">${dbMB}</span></div><div class="storage-bar"><div class="storage-bar-fill db" style="width:${Math.max(dbPct,5)}%"></div></div></div>
+        <div class="storage-summary">
+          <div class="storage-summary-total"><span class="storage-summary-val">${totalKB >= 1048576 ? totalGB + ' GB' : totalMB + ' MB'}</span><span class="storage-summary-label">全体の使用量</span></div>
+        </div>
+        <div class="storage-bar-wrap"><div class="storage-bar-label"><span class="storage-bar-name">データベース</span><span class="storage-bar-val">${dbMB}</span></div><div class="storage-bar"><div class="storage-bar-fill db" style="width:${Math.max(dbPct,5)}%"></div></div></div>
         <div class="storage-bar-wrap"><div class="storage-bar-label"><span class="storage-bar-name">レシート画像</span><span class="storage-bar-val">${imgMB} MB (${sys.receiptFiles}枚)</span></div><div class="storage-bar"><div class="storage-bar-fill img" style="width:${Math.max(imgPct,5)}%"></div></div></div>
+        <div class="storage-per-user">
+          <div class="storage-per-user-title">1人あたりの平均</div>
+          <div class="storage-per-user-grid">
+            <div class="storage-per-user-item"><span class="storage-per-user-val">${perUserTxt}</span><span class="storage-per-user-label">合計容量</span></div>
+            <div class="storage-per-user-item"><span class="storage-per-user-val">${perUserReceiptTxt}</span><span class="storage-per-user-label">レシート画像</span></div>
+            <div class="storage-per-user-item"><span class="storage-per-user-val">${Math.round(sys.receiptFiles / userCount)}枚</span><span class="storage-per-user-label">レシート枚数</span></div>
+            <div class="storage-per-user-item"><span class="storage-per-user-val">${Math.round(us.totalRecords / userCount)}件</span><span class="storage-per-user-label">データ件数</span></div>
+          </div>
+        </div>
+        <div class="storage-cost-hint">
+          <span class="storage-cost-icon">💡</span>
+          <span class="storage-cost-text">100人利用時の推定: 画像 ${(perUserReceiptKB * 100 / 1024 / 1024).toFixed(1)} GB ・ 1000人: ${(perUserReceiptKB * 1000 / 1024 / 1024).toFixed(1)} GB</span>
+        </div>
       `;
       qs('#admin-storage-section').style.display = '';
 
@@ -802,6 +805,153 @@ const App = {
       qs('#admin-loading').innerHTML = '<span style="color:var(--red);font-size:13px">管理者データ取得失敗</span>';
       console.error('Admin dashboard error:', err);
     }
+  },
+
+  renderAdminUserList(users) {
+    qs('#admin-users-list').innerHTML = users.map((u, i) => {
+      const avatar = u.avatar_url ? `<img src="${u.avatar_url}" alt="" class="au-avatar-img">` : `<span class="au-avatar-letter">${this.esc(u.name.charAt(0).toUpperCase())}</span>`;
+      const lastAct = u.lastActivity ? u.lastActivity.slice(5, 16).replace('T', ' ') : '未使用';
+      const storageTxt = u.receiptSizeKB >= 1024 ? `${(u.receiptSizeKB/1024).toFixed(1)} MB` : `${u.receiptSizeKB||0} KB`;
+      return `
+        <div class="au-item" style="--i:${i}" data-uid="${u.id}">
+          <div class="au-avatar">${avatar}</div>
+          <div class="au-info">
+            <div class="au-name">${this.esc(u.name)}<span class="au-role-badge au-role-${u.role}">${u.role === 'admin' ? '管理者' : 'ユーザー'}</span></div>
+            <div class="au-email">${this.esc(u.email)}</div>
+            <div class="au-stats">${u.bookCount||0}帳簿 ・ ${u.totalRecords}件 ・ レシート${u.receiptCount||0}枚 (${storageTxt})</div>
+            <div class="au-last">最終利用: ${lastAct}</div>
+          </div>
+          <div class="au-controls" onclick="event.stopPropagation()">
+            <select class="au-select" data-uid="${u.id}" data-field="role"><option value="user"${u.role==='user'?' selected':''}>ユーザー</option><option value="admin"${u.role==='admin'?' selected':''}>管理者</option></select>
+            <select class="au-select" data-uid="${u.id}" data-field="plan"><option value="free"${(u.plan||'free')==='free'?' selected':''}>無料</option><option value="pro"${u.plan==='pro'?' selected':''}>Pro</option><option value="business"${u.plan==='business'?' selected':''}>法人</option></select>
+          </div>
+        </div>
+        <div class="au-detail" id="au-detail-${u.id}" style="display:none">
+          <div class="au-detail-loading"><div class="spinner"></div></div>
+        </div>`;
+    }).join('');
+
+    // ユーザー行タップで詳細展開
+    qs('#admin-users-list').querySelectorAll('.au-item').forEach(el => {
+      el.addEventListener('click', () => this.toggleUserDetail(el.dataset.uid));
+    });
+
+    // role/plan変更
+    qs('#admin-users-list').querySelectorAll('.au-select').forEach(sel => {
+      sel.addEventListener('change', async () => {
+        const body = {}; body[sel.dataset.field] = sel.value;
+        try {
+          await this.api(`/api/admin/user/${sel.dataset.uid}`, { method: 'PUT', body: JSON.stringify(body) });
+          this.toast(`${sel.dataset.field === 'role' ? '権限' : 'プラン'}を変更しました`, 'success');
+        } catch (err) { this.toast(err.message, 'error'); }
+      });
+    });
+  },
+
+  async toggleUserDetail(uid) {
+    const panel = qs(`#au-detail-${uid}`);
+    if (!panel) return;
+    if (panel.style.display !== 'none') {
+      panel.style.display = 'none';
+      return;
+    }
+    panel.style.display = '';
+    panel.innerHTML = '<div class="au-detail-loading"><div class="spinner"></div></div>';
+    try {
+      const d = await this.api(`/api/admin/user/${uid}/detail`);
+      const u = d.user;
+      const booksHtml = d.books.map(b => {
+        const bStorage = b.receiptSizeKB >= 1024 ? `${(b.receiptSizeKB/1024).toFixed(1)} MB` : `${b.receiptSizeKB} KB`;
+        return `
+          <div class="aud-book">
+            <div class="aud-book-head"><span>${b.emoji} ${this.esc(b.name)}</span></div>
+            <div class="aud-book-stats">
+              <span>収入 ${b.incomeCount}件 (¥${b.incomeTotal.toLocaleString()})</span>
+              <span>経費 ${b.expenseCount}件 (¥${b.expenseTotal.toLocaleString()})</span>
+              <span>レシート ${b.receiptCount}枚 (${bStorage})</span>
+            </div>
+          </div>`;
+      }).join('') || '<div class="aud-empty">帳簿なし</div>';
+
+      const monthlyHtml = d.monthly.map(m => {
+        const total = m.income + m.expense;
+        const label = m.month.replace(/^(\d{4})-(\d{2})$/, (_, y, mo) => `${parseInt(mo)}月`);
+        return `<div class="aud-month"><span class="aud-month-label">${label}</span><span class="aud-month-bar"><span class="aud-month-fill" style="width:${Math.min(total * 4, 100)}%"></span></span><span class="aud-month-num">${total}件</span></div>`;
+      }).join('');
+
+      const actsHtml = d.recentActivity.map(a => {
+        const t = a.created_at ? a.created_at.slice(5, 16).replace('T', ' ') : '';
+        return `<div class="aud-act"><span class="aud-act-time">${t}</span><span class="aud-act-text">${this.esc(a.details || a.action)}</span></div>`;
+      }).join('') || '<div class="aud-empty">アクティビティなし</div>';
+
+      const totalStorage = d.books.reduce((s, b) => s + b.receiptSizeKB, 0);
+      const tsTxt = totalStorage >= 1024 ? `${(totalStorage/1024).toFixed(1)} MB` : `${totalStorage} KB`;
+
+      panel.innerHTML = `
+        <div class="aud-section">
+          <div class="aud-title">使用容量</div>
+          <div class="aud-storage-total">${tsTxt}</div>
+        </div>
+        <div class="aud-section">
+          <div class="aud-title">帳簿別の内訳</div>
+          ${booksHtml}
+        </div>
+        <div class="aud-section">
+          <div class="aud-title">月別の入力数（6ヶ月）</div>
+          ${monthlyHtml}
+        </div>
+        <div class="aud-section">
+          <div class="aud-title">最近の操作</div>
+          ${actsHtml}
+        </div>`;
+    } catch (err) {
+      panel.innerHTML = `<div class="aud-empty">読み込みに失敗しました</div>`;
+    }
+  },
+
+  renderStorageRanking(users) {
+    const sorted = [...users].sort((a, b) => (b.receiptSizeKB||0) - (a.receiptSizeKB||0));
+    const maxKB = sorted[0]?.receiptSizeKB || 1;
+    const medals = ['🥇', '🥈', '🥉'];
+
+    // 容量ランキング
+    const storageHtml = sorted.map((u, i) => {
+      const txt = u.receiptSizeKB >= 1024 ? `${(u.receiptSizeKB/1024).toFixed(1)} MB` : `${u.receiptSizeKB||0} KB`;
+      const pct = maxKB ? Math.round((u.receiptSizeKB||0) / maxKB * 100) : 0;
+      const medal = i < 3 ? medals[i] : `<span class="rank-num">${i+1}</span>`;
+      return `
+        <div class="rank-row">
+          <span class="rank-medal">${medal}</span>
+          <span class="rank-name">${this.esc(u.name)}</span>
+          <span class="rank-bar"><span class="rank-fill" style="width:${Math.max(pct,3)}%"></span></span>
+          <span class="rank-val">${txt}</span>
+        </div>`;
+    }).join('');
+
+    // 利用頻度ランキング
+    const sortedByRecords = [...users].sort((a, b) => (b.totalRecords||0) - (a.totalRecords||0));
+    const maxRec = sortedByRecords[0]?.totalRecords || 1;
+    const recordsHtml = sortedByRecords.map((u, i) => {
+      const pct = maxRec ? Math.round((u.totalRecords||0) / maxRec * 100) : 0;
+      const medal = i < 3 ? medals[i] : `<span class="rank-num">${i+1}</span>`;
+      return `
+        <div class="rank-row">
+          <span class="rank-medal">${medal}</span>
+          <span class="rank-name">${this.esc(u.name)}</span>
+          <span class="rank-bar"><span class="rank-fill rank-fill-blue" style="width:${Math.max(pct,3)}%"></span></span>
+          <span class="rank-val">${u.totalRecords||0}件</span>
+        </div>`;
+    }).join('');
+
+    qs('#admin-ranking').innerHTML = `
+      <div class="rank-section">
+        <div class="rank-title">💾 容量の使用量</div>
+        ${storageHtml}
+      </div>
+      <div class="rank-section">
+        <div class="rank-title">📊 データ入力数</div>
+        ${recordsHtml}
+      </div>`;
   },
 
   calcUptime(startISO) {
@@ -820,7 +970,7 @@ const App = {
       data: {
         labels: dailyActive.map(d => { const p = d.date.split('-'); return `${parseInt(p[1])}/${parseInt(p[2])}`; }),
         datasets: [{
-          label: 'DAU',
+          label: '日別利用者数',
           data: dailyActive.map(d => d.count),
           borderColor: '#6366f1',
           backgroundColor: 'rgba(99,102,241,.1)',
