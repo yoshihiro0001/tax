@@ -587,12 +587,13 @@ router.get('/api/income', auth, (req, res) => {
     const book = bookAccess(req);
     if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
     if (!book.can_view_income) return res.json([]);
-    const { year, month, include_pending } = req.query;
+    const { year, month, income_type, include_pending } = req.query;
     let sql = "SELECT i.*, u.name as creator_name FROM income i LEFT JOIN users u ON i.created_by = u.id WHERE i.book_id = ?";
     const params = [book.id];
     if (!include_pending) { sql += " AND (i.status = 'approved' OR i.status IS NULL)"; }
     if (year) { sql += " AND strftime('%Y',i.date) = ?"; params.push(year); }
     if (month) { sql += " AND strftime('%m',i.date) = ?"; params.push(month.padStart(2,'0')); }
+    if (income_type) { sql += " AND COALESCE(i.income_type,'business') = ?"; params.push(income_type); }
     sql += ' ORDER BY i.date DESC, i.id DESC';
     res.json(db.prepare(sql).all(...params));
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -848,7 +849,10 @@ router.get('/api/summary/:year', auth, (req, res) => {
     const breakdown = db.prepare(`SELECT category,SUM(amount) as total,COUNT(*) as count FROM expenses WHERE book_id=? ${approvedFilter} AND strftime('%Y',date)=? GROUP BY category ORDER BY total DESC`).all(book.id,year);
     const mi = db.prepare(`SELECT strftime('%m',date) as month,SUM(amount) as total FROM income WHERE book_id=? ${approvedFilter} AND strftime('%Y',date)=? GROUP BY strftime('%m',date)`).all(book.id,year);
     const me2 = db.prepare(`SELECT strftime('%m',date) as month,SUM(amount) as total FROM expenses WHERE book_id=? ${approvedFilter} AND strftime('%Y',date)=? GROUP BY strftime('%m',date)`).all(book.id,year);
-    res.json({ year, income:inc.total, expenses:exp.total, profit:inc.total-exp.total, breakdown, monthlyIncome:mi, monthlyExpense:me2 });
+    // 収入区分別内訳
+    const incomeBreakdown = db.prepare(`SELECT COALESCE(income_type,'business') as income_type, SUM(amount) as total, COUNT(*) as count FROM income WHERE book_id=? ${approvedFilter} AND strftime('%Y',date)=? GROUP BY income_type ORDER BY total DESC`).all(book.id, year);
+
+    res.json({ year, income:inc.total, expenses:exp.total, profit:inc.total-exp.total, breakdown, incomeBreakdown, monthlyIncome:mi, monthlyExpense:me2 });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

@@ -38,6 +38,16 @@ const App = {
     return c ? c.icon : '📌';
   },
 
+  incomeTypes: {
+    business: { name: '事業所得', icon: '💼' },
+    salary: { name: '給与所得', icon: '🏢' },
+    fx_stock: { name: '株・FX', icon: '📈' },
+    real_estate: { name: '不動産所得', icon: '🏠' },
+    misc: { name: 'その他', icon: '📌' }
+  },
+  incomeTypeName(id) { return (this.incomeTypes[id] || this.incomeTypes.business).name; },
+  incomeTypeIcon(id) { return (this.incomeTypes[id] || this.incomeTypes.business).icon; },
+
   // ========================================
   // 初期化
   // ========================================
@@ -674,6 +684,16 @@ const App = {
       this.toast('コピーしました', 'success');
     });
 
+    // フロー行タップで一覧を表示
+    qs('#tf-income-row').addEventListener('click', () => {
+      const y = qs('#report-year').value;
+      this.openTxListModal('income', y);
+    });
+    qs('#tf-expense-row').addEventListener('click', () => {
+      const y = qs('#report-year').value;
+      this.openTxListModal('expense', y);
+    });
+
     // 控除追加
     qs('#btn-add-deduction').addEventListener('click', () => {
       const types = [
@@ -730,12 +750,41 @@ const App = {
     try {
       // サマリー（経費内訳・月別推移用）
       const d = await this.api(`/api/summary/${y}?bookId=${this.currentBook.id}`);
+      // 収入内訳バー
+      const incBdWrap = qs('#rpt-income-breakdown');
+      const incEmpty = qs('#rpt-income-empty');
+      if (d.incomeBreakdown && d.incomeBreakdown.length > 0) {
+        incEmpty.style.display = 'none';
+        const maxInc = d.incomeBreakdown[0].total;
+        incBdWrap.innerHTML = d.incomeBreakdown.map(b => `
+          <div class="bd-item" data-income-type="${b.income_type}"><div class="bd-head"><span class="bd-name">${this.incomeTypeIcon(b.income_type)} ${this.incomeTypeName(b.income_type)}</span><span class="bd-val">¥${b.total.toLocaleString()} (${b.count}件) <span class="bd-arrow">›</span></span></div>
+          <div class="bd-bar"><div class="bd-fill income" style="width:${(b.total/maxInc*100).toFixed(1)}%"></div></div></div>
+        `).join('');
+        incBdWrap.querySelectorAll('.bd-item').forEach(el => {
+          el.addEventListener('click', () => this.openTxListModal('income', y, null, el.dataset.incomeType));
+        });
+      } else {
+        incBdWrap.innerHTML = '';
+        incEmpty.style.display = '';
+      }
+
+      // 経費内訳バー
       const bdWrap = qs('#rpt-breakdown');
-      const maxBd = d.breakdown.length ? d.breakdown[0].total : 1;
-      bdWrap.innerHTML = d.breakdown.map(b => `
-        <div class="bd-item"><div class="bd-head"><span class="bd-name">${this.categoryIcon(b.category)} ${this.categoryName(b.category)}</span><span class="bd-val">¥${b.total.toLocaleString()} (${b.count}件)</span></div>
-        <div class="bd-bar"><div class="bd-fill" style="width:${(b.total/maxBd*100).toFixed(1)}%"></div></div></div>
-      `).join('');
+      const expEmpty = qs('#rpt-expense-empty');
+      if (d.breakdown.length > 0) {
+        expEmpty.style.display = 'none';
+        const maxBd = d.breakdown[0].total;
+        bdWrap.innerHTML = d.breakdown.map(b => `
+          <div class="bd-item" data-category="${b.category}"><div class="bd-head"><span class="bd-name">${this.categoryIcon(b.category)} ${this.categoryName(b.category)}</span><span class="bd-val">¥${b.total.toLocaleString()} (${b.count}件) <span class="bd-arrow">›</span></span></div>
+          <div class="bd-bar"><div class="bd-fill" style="width:${(b.total/maxBd*100).toFixed(1)}%"></div></div></div>
+        `).join('');
+        bdWrap.querySelectorAll('.bd-item').forEach(el => {
+          el.addEventListener('click', () => this.openTxListModal('expense', y, el.dataset.category));
+        });
+      } else {
+        bdWrap.innerHTML = '';
+        expEmpty.style.display = '';
+      }
       this.renderReportChart(d);
 
       // 税額シミュレーション
@@ -859,6 +908,70 @@ const App = {
           } catch (err) { this.toast(err.message, 'error'); }
         });
       });
+    }
+  },
+
+  async openTxListModal(kind, year, category, incomeType) {
+    const titleEl = qs('#tx-list-title');
+    const content = qs('#tx-list-content');
+    const empty = qs('#tx-list-empty');
+    content.innerHTML = '<div class="overview-loading"><div class="spinner"></div></div>';
+    empty.style.display = 'none';
+
+    if (kind === 'income') {
+      titleEl.textContent = incomeType ? `${this.incomeTypeIcon(incomeType)} ${this.incomeTypeName(incomeType)}` : '収入一覧';
+    } else {
+      titleEl.textContent = category ? `${this.categoryIcon(category)} ${this.categoryName(category)}` : '経費一覧';
+    }
+    this.openOverlay('tx-list');
+
+    try {
+      let items = [];
+      if (kind === 'income') {
+        let url = `/api/income?bookId=${this.currentBook.id}&year=${year}&include_pending=1`;
+        if (incomeType) url += `&income_type=${incomeType}`;
+        items = await this.api(url);
+      } else {
+        let url = `/api/expenses?bookId=${this.currentBook.id}&year=${year}&include_pending=1`;
+        if (category) url += `&category=${category}`;
+        items = await this.api(url);
+      }
+
+      if (items.length === 0) {
+        content.innerHTML = '';
+        empty.style.display = '';
+        return;
+      }
+
+      content.innerHTML = items.map(t => {
+        const isInc = kind === 'income';
+        const icon = isInc ? this.incomeTypeIcon(t.income_type || 'business') : this.categoryIcon(t.category);
+        const cls = isInc ? 'income' : 'expense';
+        const desc = t.description || (isInc ? this.incomeTypeName(t.income_type || 'business') : this.categoryName(t.category));
+        const statusLabel = t.status === 'pending' ? '<span class="txl-status pending">承認待ち</span>' : (t.status === 'approved' ? '<span class="txl-status approved">承認済</span>' : '');
+        const creator = t.creator_name ? `<span class="txl-creator">by ${this.esc(t.creator_name)}</span>` : '';
+        return `<div class="txl-item" data-id="${t.id}" data-kind="${kind}">
+          <div class="txl-icon ${cls}">${icon}</div>
+          <div class="txl-body">
+            <div class="txl-desc">${this.esc(desc)}</div>
+            <div class="txl-date">${t.date} ${creator}</div>
+          </div>
+          <div class="txl-right">
+            <div class="txl-amount ${cls}">${isInc ? '+' : '-'}¥${t.amount.toLocaleString()}</div>
+            ${statusLabel}
+          </div>
+        </div>`;
+      }).join('');
+
+      content.querySelectorAll('.txl-item').forEach(el => {
+        el.addEventListener('click', () => {
+          this.closeOverlay('tx-list');
+          this.openEditModal(el.dataset.id, el.dataset.kind);
+        });
+      });
+    } catch (err) {
+      content.innerHTML = '';
+      this.toast(err.message, 'error');
     }
   },
 
@@ -1764,6 +1877,9 @@ const App = {
         if (qs('#view-history').classList.contains('active')) this.loadHistory();
       } catch (err) { this.toast(err.message, 'error'); }
     });
+
+    // 一覧モーダル
+    qs('#close-tx-list').addEventListener('click', () => this.closeOverlay('tx-list'));
 
     // 帳簿追加クローズ
     qs('#close-add-book').addEventListener('click', () => this.closeOverlay('add-book'));

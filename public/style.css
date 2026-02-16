@@ -241,8 +241,11 @@ body { min-height: 100dvh; }
   background: var(--card); border-radius: var(--radius); padding: 16px 20px;
   box-shadow: var(--shadow); margin-bottom: 16px;
 }
-.tf-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 14px; }
+.tf-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; font-size: 14px; }
 .tf-row.bold { font-weight: 700; font-size: 15px; }
+.tf-tappable { cursor: pointer; border-radius: 8px; padding: 8px 6px; margin: 0 -6px; transition: background .15s; }
+.tf-tappable:active { background: var(--bg); }
+.tf-arrow { color: var(--text3); font-size: 14px; margin-left: 4px; }
 .tf-val { font-weight: 700; }
 .tf-val.income { color: var(--green); }
 .tf-val.expense { color: var(--red); }
@@ -316,12 +319,38 @@ body { min-height: 100dvh; }
 .chart-wrap { height: 200px; position: relative; }
 
 /* 内訳バー */
-.bd-item { margin-bottom: 12px; }
+.rpt-breakdown-section { cursor: pointer; }
+.bd-item { margin-bottom: 12px; cursor: pointer; padding: 6px 8px; border-radius: 8px; transition: background .15s; }
+.bd-item:active { background: var(--bg); }
 .bd-head { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
 .bd-name { font-weight: 600; }
 .bd-val { color: var(--text2); }
 .bd-bar { height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; }
 .bd-fill { height: 100%; border-radius: 3px; background: var(--pri); transition: width .6s cubic-bezier(.22,1,.36,1); }
+.bd-fill.income { background: var(--green); }
+.bd-item .bd-arrow { color: var(--text3); font-size: 12px; margin-left: 6px; }
+.rpt-bd-empty { color: var(--text3); font-size: 13px; text-align: center; padding: 12px 0; }
+
+/* 一覧モーダル */
+.tx-list-modal-content { max-height: 60vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.txl-item { display: flex; align-items: center; gap: 10px; padding: 12px 8px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .15s; }
+.txl-item:active { background: var(--bg); }
+.txl-item:last-child { border-bottom: none; }
+.txl-icon { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+.txl-icon.income { background: rgba(16,185,129,.1); }
+.txl-icon.expense { background: rgba(239,68,68,.1); }
+.txl-body { flex: 1; min-width: 0; }
+.txl-desc { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.txl-date { font-size: 12px; color: var(--text3); margin-top: 2px; }
+.txl-creator { font-size: 11px; color: var(--text3); }
+.txl-right { text-align: right; flex-shrink: 0; }
+.txl-amount { font-size: 15px; font-weight: 700; }
+.txl-amount.income { color: var(--green); }
+.txl-amount.expense { color: var(--red); }
+.txl-status { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 8px; margin-top: 2px; }
+.txl-status.pending { background: #fef3c7; color: #92400e; }
+.txl-status.approved { background: #d1fae5; color: #065f46; }
+.tx-list-empty { color: var(--text3); font-size: 13px; text-align: center; padding: 24px 0; }
 
 /* AI */
 .ai-textarea {
