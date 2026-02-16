@@ -106,6 +106,37 @@ db.exec(`
   );
 `);
 
+// === 運用管理テーブル ===
+db.exec(`
+  CREATE TABLE IF NOT EXISTS error_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    level TEXT DEFAULT 'error',
+    message TEXT NOT NULL,
+    endpoint TEXT,
+    user_id INTEGER,
+    stack TEXT,
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+  );
+  CREATE TABLE IF NOT EXISTS inquiries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    subject TEXT NOT NULL,
+    message TEXT NOT NULL,
+    status TEXT DEFAULT 'new',
+    admin_reply TEXT,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    updated_at TEXT DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE TABLE IF NOT EXISTS activity_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    action TEXT NOT NULL,
+    details TEXT,
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+  );
+`);
+
 // === マイグレーション: 既存テーブルにカラム追加 ===
 const migrations = [
   "ALTER TABLE users ADD COLUMN avatar_url TEXT",
@@ -114,6 +145,17 @@ const migrations = [
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* カラムが既に存在する場合は無視 */ }
 }
+
+// エラーログ記録ヘルパー
+function logError(message, endpoint, userId, stack) {
+  try { db.prepare('INSERT INTO error_logs (level, message, endpoint, user_id, stack) VALUES (?,?,?,?,?)').run('error', message, endpoint || '', userId || null, stack || ''); } catch {}
+}
+function logActivity(userId, action, details) {
+  try { db.prepare('INSERT INTO activity_logs (user_id, action, details) VALUES (?,?,?)').run(userId || null, action, details || ''); } catch {}
+}
+
+// サーバー起動時刻
+const SERVER_START = new Date().toISOString();
 
 // ファイルアップロード設定
 const storage = multer.diskStorage({
@@ -214,8 +256,10 @@ router.post('/api/auth/register', async (req, res) => {
 
     const isSecure = req.get('X-Forwarded-Proto') === 'https' || req.secure;
     res.cookie('session', token, { httpOnly: true, maxAge: 30*24*60*60*1000, sameSite: 'lax', path: '/', secure: isSecure });
+    logActivity(userId, 'register', `新規登録: ${email}`);
     res.json({ success: true, user: { id: userId, email, name } });
   } catch (err) {
+    logError(err.message, '/api/auth/register', null, err.stack);
     res.status(500).json({ error: err.message });
   }
 });
@@ -238,8 +282,10 @@ router.post('/api/auth/login', async (req, res) => {
 
     const isSecure = req.get('X-Forwarded-Proto') === 'https' || req.secure;
     res.cookie('session', token, { httpOnly: true, maxAge: 30*24*60*60*1000, sameSite: 'lax', path: '/', secure: isSecure });
+    logActivity(user.id, 'login', `メールログイン: ${user.email}`);
     res.json({ success: true, user: { id: user.id, email: user.email, name: user.name } });
   } catch (err) {
+    logError(err.message, '/api/auth/login', null, err.stack);
     res.status(500).json({ error: err.message });
   }
 });
@@ -304,8 +350,10 @@ router.post('/api/auth/google', async (req, res) => {
 
     const isSecure = req.get('X-Forwarded-Proto') === 'https' || req.secure;
     res.cookie('session', token, { httpOnly: true, maxAge: 30*24*60*60*1000, sameSite: 'lax', path: '/', secure: isSecure });
+    logActivity(user.id, 'login', `Googleログイン: ${user.email}`);
     res.json({ success: true, user: { id: user.id, email: user.email, name: user.name } });
   } catch (err) {
+    logError(err.message, '/api/auth/google', null, err.stack);
     res.status(500).json({ error: err.message });
   }
 });
@@ -364,8 +412,9 @@ router.post('/api/income', auth, (req, res) => {
     if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
     if (!date || !amount) return res.status(400).json({ error: '日付と金額は必須' });
     const r = db.prepare('INSERT INTO income (book_id, date, amount, type, description) VALUES (?,?,?,?,?)').run(book.id, date, parseInt(amount), type || '振込', description || '');
+    logActivity(req.userId, 'add_income', `収入追加: ¥${amount}`);
     res.json({ id: r.lastInsertRowid, success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { logError(err.message, '/api/income', req.userId, err.stack); res.status(500).json({ error: err.message }); }
 });
 
 router.get('/api/income', auth, (req, res) => {
@@ -414,8 +463,9 @@ router.post('/api/expense', auth, upload.single('receipt'), (req, res) => {
     if (!date || !amount || !category) return res.status(400).json({ error: '日付、金額、科目は必須' });
     const receiptPath = req.file ? `/uploads/${req.file.filename}` : null;
     const r = db.prepare('INSERT INTO expenses (book_id,date,amount,category,description,receipt_path,source) VALUES (?,?,?,?,?,?,?)').run(book.id, date, parseInt(amount), category, description || '', receiptPath, source || 'manual');
+    logActivity(req.userId, 'add_expense', `経費追加: ¥${amount} (${source || 'manual'})`);
     res.json({ id: r.lastInsertRowid, success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { logError(err.message, '/api/expense', req.userId, err.stack); res.status(500).json({ error: err.message }); }
 });
 
 router.get('/api/expenses', auth, (req, res) => {
@@ -557,8 +607,9 @@ router.post('/api/import-csv', auth, (req, res) => {
       return c;
     });
     const count = tx(rows);
+    logActivity(req.userId, 'csv_import', `CSV取込: ${count}件`);
     res.json({ success: true, imported: count });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { logError(err.message, '/api/import-csv', req.userId, err.stack); res.status(500).json({ error: err.message }); }
 });
 
 // バックアップ
@@ -582,39 +633,18 @@ function adminOnly(req, res, next) {
 }
 
 // ========================================
-// 管理者 API
+// 管理者 API — 運用ダッシュボード
 // ========================================
 
-// 全体概要: KPI + ユーザー別詳細 + ストレージ
-router.get('/api/admin/overview', auth, adminOnly, (req, res) => {
+// メイン運用ダッシュボード
+router.get('/api/admin/dashboard', auth, adminOnly, (req, res) => {
   try {
-    // 全ユーザー + 各ユーザーのデータ量
-    const allUsers = db.prepare("SELECT id, email, name, avatar_url, auth_provider, role, plan, created_at FROM users ORDER BY created_at").all();
-    const usersDetail = allUsers.map(u => {
-      const books = db.prepare('SELECT id, name, emoji FROM books WHERE user_id=?').all(u.id);
-      const bookIds = books.map(b => b.id);
-      let incomeCount = 0, incomeTotal = 0, expenseCount = 0, expenseTotal = 0, receiptCount = 0;
-      for (const bid of bookIds) {
-        const ic = db.prepare('SELECT COUNT(*) as c, COALESCE(SUM(amount),0) as t FROM income WHERE book_id=?').get(bid);
-        const ec = db.prepare('SELECT COUNT(*) as c, COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=?').get(bid);
-        const rc = db.prepare("SELECT COUNT(*) as c FROM expenses WHERE book_id=? AND receipt_path IS NOT NULL AND receipt_path != ''").get(bid);
-        incomeCount += ic.c; incomeTotal += ic.t;
-        expenseCount += ec.c; expenseTotal += ec.t;
-        receiptCount += rc.c;
-      }
-      return { ...u, password_hash: undefined, books, bookCount: books.length, incomeCount, incomeTotal, expenseCount, expenseTotal, receiptCount, totalRecords: incomeCount + expenseCount };
-    });
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    const weekAgo = new Date(now - 7*24*60*60*1000).toISOString().slice(0,10);
 
-    // KPI
-    const totalUsers = allUsers.length;
-    const totalBooks = db.prepare('SELECT COUNT(*) as c FROM books').get().c;
-    const totalIncome = db.prepare('SELECT COALESCE(SUM(amount),0) as t FROM income').get().t;
-    const totalExpense = db.prepare('SELECT COALESCE(SUM(amount),0) as t FROM expenses').get().t;
-    const totalRecords = db.prepare('SELECT COUNT(*) as c FROM income').get().c + db.prepare('SELECT COUNT(*) as c FROM expenses').get().c;
-    const planCounts = { free: 0, pro: 0, business: 0 };
-    allUsers.forEach(u => { planCounts[u.plan || 'free'] = (planCounts[u.plan || 'free'] || 0) + 1; });
-
-    // ストレージ
+    // --- システム状況 ---
+    const activeSessions = db.prepare("SELECT COUNT(*) as c FROM sessions WHERE expires_at > datetime('now','localtime')").get().c;
     let dbSizeKB = 0;
     try { dbSizeKB = Math.round(fs.statSync('./data/database.sqlite').size / 1024); } catch {}
     let receiptFiles = 0, receiptSizeKB = 0;
@@ -624,14 +654,99 @@ router.get('/api/admin/overview', auth, adminOnly, (req, res) => {
       files.forEach(f => { try { receiptSizeKB += fs.statSync(`./uploads/${f}`).size; } catch {} });
       receiptSizeKB = Math.round(receiptSizeKB / 1024);
     } catch {}
-    let backups = [];
-    try { backups = fs.readdirSync('./data/backups').filter(f => f.endsWith('.sqlite')).sort().reverse().slice(0, 5); } catch {}
+    const errors24h = db.prepare("SELECT COUNT(*) as c FROM error_logs WHERE created_at >= datetime('now','localtime','-1 day')").get().c;
+    const errorsTotal = db.prepare("SELECT COUNT(*) as c FROM error_logs").get().c;
+
+    // --- ユーザーメトリクス ---
+    const totalUsers = db.prepare('SELECT COUNT(*) as c FROM users').get().c;
+    const newUsersToday = db.prepare("SELECT COUNT(*) as c FROM users WHERE date(created_at) = ?").get(today).c;
+    const newUsersWeek = db.prepare("SELECT COUNT(*) as c FROM users WHERE date(created_at) >= ?").get(weekAgo).c;
+    const activeUsersToday = db.prepare("SELECT COUNT(DISTINCT user_id) as c FROM activity_logs WHERE date(created_at) = ?").get(today).c;
+    const activeUsersWeek = db.prepare("SELECT COUNT(DISTINCT user_id) as c FROM activity_logs WHERE date(created_at) >= ?").get(weekAgo).c;
+    const planCounts = { free: 0, pro: 0, business: 0 };
+    db.prepare("SELECT plan, COUNT(*) as c FROM users GROUP BY plan").all().forEach(r => { planCounts[r.plan || 'free'] = r.c; });
+
+    // --- 利用状況 ---
+    const txToday = db.prepare("SELECT COUNT(*) as c FROM activity_logs WHERE date(created_at) = ? AND action IN ('add_income','add_expense')").get(today).c;
+    const txWeek = db.prepare("SELECT COUNT(*) as c FROM activity_logs WHERE date(created_at) >= ? AND action IN ('add_income','add_expense')").get(weekAgo).c;
+    const ocrToday = db.prepare("SELECT COUNT(*) as c FROM activity_logs WHERE date(created_at) = ? AND details LIKE '%ocr%'").get(today).c;
+    const csvToday = db.prepare("SELECT COUNT(*) as c FROM activity_logs WHERE date(created_at) = ? AND action = 'csv_import'").get(today).c;
+    const totalRecords = db.prepare('SELECT COUNT(*) as c FROM income').get().c + db.prepare('SELECT COUNT(*) as c FROM expenses').get().c;
+
+    // --- 最近のエラー (最新20件) ---
+    const recentErrors = db.prepare("SELECT e.*, u.email as user_email FROM error_logs e LEFT JOIN users u ON e.user_id = u.id ORDER BY e.created_at DESC LIMIT 20").all();
+
+    // --- 問い合わせ ---
+    const newInquiries = db.prepare("SELECT COUNT(*) as c FROM inquiries WHERE status = 'new'").get().c;
+    const recentInquiries = db.prepare("SELECT i.*, u.name as user_name, u.email as user_email FROM inquiries i JOIN users u ON i.user_id = u.id ORDER BY i.created_at DESC LIMIT 20").all();
+
+    // --- 最近のアクティビティ (最新30件) ---
+    const recentActivity = db.prepare("SELECT a.*, u.name as user_name, u.email as user_email FROM activity_logs a LEFT JOIN users u ON a.user_id = u.id ORDER BY a.created_at DESC LIMIT 30").all();
+
+    // --- ユーザー一覧 ---
+    const users = db.prepare("SELECT id, email, name, avatar_url, auth_provider, role, plan, created_at FROM users ORDER BY created_at DESC").all().map(u => {
+      const lastAct = db.prepare('SELECT created_at FROM activity_logs WHERE user_id = ? ORDER BY created_at DESC LIMIT 1').get(u.id);
+      const records = db.prepare("SELECT (SELECT COUNT(*) FROM income i JOIN books b ON i.book_id=b.id WHERE b.user_id=?) + (SELECT COUNT(*) FROM expenses e JOIN books b ON e.book_id=b.id WHERE b.user_id=?) as c").get(u.id, u.id);
+      return { ...u, lastActivity: lastAct?.created_at || null, totalRecords: records.c };
+    });
+
+    // --- 日別アクティブユーザー推移 (過去14日) ---
+    const dailyActive = [];
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(now - i*24*60*60*1000).toISOString().slice(0,10);
+      const c = db.prepare("SELECT COUNT(DISTINCT user_id) as c FROM activity_logs WHERE date(created_at) = ?").get(d).c;
+      dailyActive.push({ date: d, count: c });
+    }
 
     res.json({
-      kpi: { totalUsers, totalBooks, totalRecords, totalIncome, totalExpense, planCounts },
-      users: usersDetail,
-      storage: { dbSizeKB, receiptFiles, receiptSizeKB, backups }
+      system: { serverStart: SERVER_START, activeSessions, dbSizeKB, receiptFiles, receiptSizeKB, errors24h, errorsTotal },
+      userMetrics: { totalUsers, newUsersToday, newUsersWeek, activeUsersToday, activeUsersWeek, planCounts },
+      usage: { txToday, txWeek, ocrToday, csvToday, totalRecords },
+      recentErrors,
+      inquiries: { newCount: newInquiries, items: recentInquiries },
+      recentActivity,
+      users,
+      dailyActive
     });
+  } catch (err) { logError(err.message, '/api/admin/dashboard', req.userId, err.stack); res.status(500).json({ error: err.message }); }
+});
+
+// エラーログ詳細
+router.get('/api/admin/errors', auth, adminOnly, (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = 50;
+    const offset = (page - 1) * limit;
+    const total = db.prepare('SELECT COUNT(*) as c FROM error_logs').get().c;
+    const items = db.prepare("SELECT e.*, u.email as user_email FROM error_logs e LEFT JOIN users u ON e.user_id = u.id ORDER BY e.created_at DESC LIMIT ? OFFSET ?").all(limit, offset);
+    res.json({ items, total, page, pages: Math.ceil(total / limit) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// エラーログクリア
+router.delete('/api/admin/errors', auth, adminOnly, (req, res) => {
+  try {
+    db.prepare('DELETE FROM error_logs').run();
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// 問い合わせ管理
+router.get('/api/admin/inquiries', auth, adminOnly, (req, res) => {
+  try {
+    const items = db.prepare("SELECT i.*, u.name as user_name, u.email as user_email FROM inquiries i JOIN users u ON i.user_id = u.id ORDER BY CASE WHEN i.status='new' THEN 0 WHEN i.status='in_progress' THEN 1 ELSE 2 END, i.created_at DESC").all();
+    res.json({ items });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// 問い合わせに返信
+router.put('/api/admin/inquiries/:id', auth, adminOnly, (req, res) => {
+  try {
+    const { status, admin_reply } = req.body;
+    const inq = db.prepare('SELECT id FROM inquiries WHERE id = ?').get(req.params.id);
+    if (!inq) return res.status(404).json({ error: '問い合わせが見つかりません' });
+    db.prepare("UPDATE inquiries SET status=?, admin_reply=?, updated_at=datetime('now','localtime') WHERE id=?").run(status || 'replied', admin_reply || '', inq.id);
+    res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -643,7 +758,27 @@ router.put('/api/admin/user/:id', auth, adminOnly, (req, res) => {
     if (!target) return res.status(404).json({ error: 'ユーザーが見つかりません' });
     if (role && ['admin', 'user'].includes(role)) db.prepare('UPDATE users SET role=? WHERE id=?').run(role, target.id);
     if (plan && ['free', 'pro', 'business'].includes(plan)) db.prepare('UPDATE users SET plan=? WHERE id=?').run(plan, target.id);
+    logActivity(req.userId, 'admin_action', `ユーザー${target.id}の${role?'権限':'プラン'}を変更`);
     res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ユーザー問い合わせ送信
+router.post('/api/inquiry', auth, (req, res) => {
+  try {
+    const { subject, message } = req.body;
+    if (!subject || !message) return res.status(400).json({ error: '件名とメッセージを入力してください' });
+    db.prepare('INSERT INTO inquiries (user_id, subject, message) VALUES (?,?,?)').run(req.userId, subject, message);
+    logActivity(req.userId, 'inquiry', `問い合わせ: ${subject}`);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ユーザー自分の問い合わせ一覧
+router.get('/api/my/inquiries', auth, (req, res) => {
+  try {
+    const items = db.prepare('SELECT * FROM inquiries WHERE user_id = ? ORDER BY created_at DESC').all(req.userId);
+    res.json({ items });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

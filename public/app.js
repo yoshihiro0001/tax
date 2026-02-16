@@ -598,18 +598,16 @@ const App = {
   // データ概要（見える化）
   // ========================================
   isAdmin() { return this.user?.role === 'admin'; },
+  adminChart: null,
 
   async loadOverview() {
-    // 管理者: admin-area表示 + admin API
-    // 一般: user-overview のみ
     const adminArea = qs('#admin-area');
     adminArea.style.display = this.isAdmin() ? '' : 'none';
 
-    // ユーザー用の自分のデータ概要（全員に表示）
     this.loadUserOverview();
+    this.loadMyInquiries();
 
-    // 管理者の場合のみ管理者データを読み込み
-    if (this.isAdmin()) this.loadAdminOverview();
+    if (this.isAdmin()) this.loadAdminDashboard();
   },
 
   async loadUserOverview() {
@@ -640,89 +638,214 @@ const App = {
     }
   },
 
-  async loadAdminOverview() {
-    qs('#admin-users-loading').style.display = 'flex';
+  async loadMyInquiries() {
     try {
-      const d = await this.api('/api/admin/overview');
-      qs('#admin-users-loading').style.display = 'none';
+      const d = await this.api('/api/my/inquiries');
+      const wrap = qs('#my-inquiries');
+      if (!d.items || d.items.length === 0) { wrap.innerHTML = ''; return; }
+      const statusLabel = { new: '未読', in_progress: '対応中', replied: '返信あり', resolved: '解決' };
+      const statusClass = { new: 'st-new', in_progress: 'st-progress', replied: 'st-replied', resolved: 'st-resolved' };
+      wrap.innerHTML = `<div class="my-inq-list">${d.items.map(i => `
+        <div class="my-inq-item">
+          <div class="my-inq-head"><span class="my-inq-subject">${this.esc(i.subject)}</span><span class="my-inq-status ${statusClass[i.status] || ''}">${statusLabel[i.status] || i.status}</span></div>
+          <div class="my-inq-msg">${this.esc(i.message).substring(0, 80)}</div>
+          ${i.admin_reply ? `<div class="my-inq-reply"><strong>返信:</strong> ${this.esc(i.admin_reply)}</div>` : ''}
+          <div class="my-inq-date">${i.created_at?.slice(0, 16).replace('T', ' ') || ''}</div>
+        </div>`).join('')}</div>`;
+    } catch {}
+  },
 
-      // KPI カード
-      const k = d.kpi;
-      qs('#admin-kpi').innerHTML = `
-        <div class="kpi-card" style="animation-delay:0s"><span class="kpi-val pri">${k.totalUsers}</span><span class="kpi-label">ユーザー数</span></div>
-        <div class="kpi-card" style="animation-delay:.05s"><span class="kpi-val">${k.totalRecords}</span><span class="kpi-label">総取引数</span></div>
-        <div class="kpi-card" style="animation-delay:.1s"><span class="kpi-val">${k.totalBooks}</span><span class="kpi-label">帳簿数</span></div>
-        <div class="kpi-card" style="animation-delay:.15s"><span class="kpi-val green">¥${this.fmtNum(k.totalIncome)}</span><span class="kpi-label">総収入</span></div>
-        <div class="kpi-card" style="animation-delay:.2s"><span class="kpi-val red">¥${this.fmtNum(k.totalExpense)}</span><span class="kpi-label">総経費</span></div>
-        <div class="kpi-card" style="animation-delay:.25s"><span class="kpi-val">${k.planCounts.free}/${k.planCounts.pro||0}/${k.planCounts.business||0}</span><span class="kpi-label">Free/Pro/Biz</span></div>
+  // ========================================
+  // 管理者ダッシュボード — 運用管理
+  // ========================================
+  async loadAdminDashboard() {
+    qs('#admin-loading').style.display = 'flex';
+    try {
+      const d = await this.api('/api/admin/dashboard');
+      qs('#admin-loading').style.display = 'none';
+
+      // --- システムステータス ---
+      const sys = d.system;
+      const uptime = this.calcUptime(sys.serverStart);
+      const healthClass = sys.errors24h > 5 ? 'st-error' : sys.errors24h > 0 ? 'st-warn' : 'st-ok';
+      const healthLabel = sys.errors24h > 5 ? '要注意' : sys.errors24h > 0 ? '警告あり' : '正常';
+      qs('#admin-status-cards').innerHTML = `
+        <div class="admin-st-card ${healthClass}">
+          <div class="admin-st-icon">${sys.errors24h > 5 ? '🔴' : sys.errors24h > 0 ? '🟡' : '🟢'}</div>
+          <div class="admin-st-info"><span class="admin-st-val">${healthLabel}</span><span class="admin-st-label">システム状態</span></div>
+        </div>
+        <div class="admin-st-card"><div class="admin-st-icon">⏱</div><div class="admin-st-info"><span class="admin-st-val">${uptime}</span><span class="admin-st-label">稼働時間</span></div></div>
+        <div class="admin-st-card"><div class="admin-st-icon">🔗</div><div class="admin-st-info"><span class="admin-st-val">${sys.activeSessions}</span><span class="admin-st-label">アクティブセッション</span></div></div>
+        <div class="admin-st-card"><div class="admin-st-icon">🚨</div><div class="admin-st-info"><span class="admin-st-val ${sys.errors24h > 0 ? 'val-red' : ''}">${sys.errors24h}</span><span class="admin-st-label">エラー (24h)</span></div></div>
       `;
+      qs('#admin-system-section').style.display = '';
 
-      // ユーザー管理
-      qs('#admin-users').innerHTML = d.users.map((u, i) => {
-        const avatar = u.avatar_url ? `<img src="${u.avatar_url}" alt="">` : this.esc(u.name.charAt(0).toUpperCase());
-        const planBadge = u.plan || 'free';
-        const planLabels = { free: 'Free', pro: 'Pro', business: 'Business' };
+      // --- 運用 KPI ---
+      const um = d.userMetrics;
+      const us = d.usage;
+      qs('#admin-kpi-cards').innerHTML = `
+        <div class="admin-kpi-item"><span class="admin-kpi-num">${um.totalUsers}</span><span class="admin-kpi-label">総ユーザー</span></div>
+        <div class="admin-kpi-item"><span class="admin-kpi-num kpi-green">${um.newUsersWeek}</span><span class="admin-kpi-label">新規 (7日)</span></div>
+        <div class="admin-kpi-item"><span class="admin-kpi-num kpi-blue">${um.activeUsersToday}</span><span class="admin-kpi-label">今日のDAU</span></div>
+        <div class="admin-kpi-item"><span class="admin-kpi-num">${um.activeUsersWeek}</span><span class="admin-kpi-label">WAU (7日)</span></div>
+        <div class="admin-kpi-item"><span class="admin-kpi-num">${us.txToday}</span><span class="admin-kpi-label">取引 (今日)</span></div>
+        <div class="admin-kpi-item"><span class="admin-kpi-num">${us.txWeek}</span><span class="admin-kpi-label">取引 (7日)</span></div>
+        <div class="admin-kpi-item"><span class="admin-kpi-num">${us.ocrToday}</span><span class="admin-kpi-label">OCR (今日)</span></div>
+        <div class="admin-kpi-item"><span class="admin-kpi-num">${us.csvToday}</span><span class="admin-kpi-label">CSV取込 (今日)</span></div>
+        <div class="admin-kpi-item"><span class="admin-kpi-num">${us.totalRecords}</span><span class="admin-kpi-label">総レコード数</span></div>
+        <div class="admin-kpi-item"><span class="admin-kpi-num">${um.planCounts.free || 0}</span><span class="admin-kpi-label">Free</span></div>
+        <div class="admin-kpi-item"><span class="admin-kpi-num kpi-purple">${um.planCounts.pro || 0}</span><span class="admin-kpi-label">Pro</span></div>
+        <div class="admin-kpi-item"><span class="admin-kpi-num kpi-gold">${um.planCounts.business || 0}</span><span class="admin-kpi-label">Business</span></div>
+      `;
+      qs('#admin-kpi-section').style.display = '';
+
+      // --- DAUチャート ---
+      this.renderAdminChart(d.dailyActive);
+      qs('#admin-chart-section').style.display = '';
+
+      // --- エラーログ ---
+      qs('#admin-error-count').textContent = sys.errorsTotal;
+      if (d.recentErrors.length > 0) {
+        qs('#admin-errors-list').innerHTML = d.recentErrors.map(e => `
+          <div class="admin-log-item log-error">
+            <div class="admin-log-head"><span class="admin-log-time">${e.created_at?.slice(5, 16).replace('T', ' ') || ''}</span><span class="admin-log-endpoint">${this.esc(e.endpoint || '')}</span></div>
+            <div class="admin-log-msg">${this.esc(e.message)}</div>
+            ${e.user_email ? `<div class="admin-log-user">${this.esc(e.user_email)}</div>` : ''}
+          </div>
+        `).join('');
+        qs('#btn-clear-errors').style.display = '';
+      } else {
+        qs('#admin-errors-list').innerHTML = '<div class="admin-empty">エラーなし — すべて正常です</div>';
+        qs('#btn-clear-errors').style.display = 'none';
+      }
+      qs('#admin-errors-section').style.display = '';
+
+      // --- 問い合わせ ---
+      qs('#admin-inquiry-count').textContent = d.inquiries.newCount;
+      qs('#admin-inquiry-count').classList.toggle('admin-badge-new', d.inquiries.newCount > 0);
+      if (d.inquiries.items.length > 0) {
+        const statusLabel = { new: '新規', in_progress: '対応中', replied: '返信済み', resolved: '解決' };
+        const statusIcon = { new: '🔴', in_progress: '🟡', replied: '🟢', resolved: '✅' };
+        qs('#admin-inquiries-list').innerHTML = d.inquiries.items.map(i => `
+          <div class="admin-inq-item" data-id="${i.id}">
+            <div class="admin-inq-head">
+              <span class="admin-inq-status-icon">${statusIcon[i.status] || '⚪'}</span>
+              <span class="admin-inq-subject">${this.esc(i.subject)}</span>
+              <span class="admin-inq-st">${statusLabel[i.status] || i.status}</span>
+            </div>
+            <div class="admin-inq-from">${this.esc(i.user_name)} (${this.esc(i.user_email)})</div>
+            <div class="admin-inq-msg">${this.esc(i.message).substring(0, 120)}</div>
+            <div class="admin-inq-date">${i.created_at?.slice(0, 16).replace('T', ' ') || ''}</div>
+          </div>
+        `).join('');
+        qs('#admin-inquiries-list').querySelectorAll('.admin-inq-item').forEach(el => {
+          el.addEventListener('click', () => this.openInquiryReply(d.inquiries.items.find(i => i.id == el.dataset.id)));
+        });
+      } else {
+        qs('#admin-inquiries-list').innerHTML = '<div class="admin-empty">問い合わせはありません</div>';
+      }
+      qs('#admin-inquiries-section').style.display = '';
+
+      // --- アクティビティ ---
+      const actionIcons = { login: '🔑', register: '✨', add_income: '💰', add_expense: '🧾', csv_import: '📄', inquiry: '💬', admin_action: '🛡️' };
+      qs('#admin-activity-list').innerHTML = d.recentActivity.map(a => `
+        <div class="admin-log-item">
+          <div class="admin-log-head"><span class="admin-log-icon">${actionIcons[a.action] || '⚡'}</span><span class="admin-log-time">${a.created_at?.slice(5, 16).replace('T', ' ') || ''}</span></div>
+          <div class="admin-log-msg">${this.esc(a.details || a.action)}</div>
+          ${a.user_name ? `<div class="admin-log-user">${this.esc(a.user_name)}</div>` : ''}
+        </div>
+      `).join('') || '<div class="admin-empty">アクティビティなし</div>';
+      qs('#admin-activity-section').style.display = '';
+
+      // --- ユーザー管理 ---
+      qs('#admin-users-list').innerHTML = d.users.map((u, i) => {
+        const avatar = u.avatar_url ? `<img src="${u.avatar_url}" alt="" class="au-avatar-img">` : `<span class="au-avatar-letter">${this.esc(u.name.charAt(0).toUpperCase())}</span>`;
+        const lastAct = u.lastActivity ? u.lastActivity.slice(5, 16).replace('T', ' ') : '未使用';
         return `
           <div class="au-item" style="--i:${i}">
             <div class="au-avatar">${avatar}</div>
             <div class="au-info">
-              <div class="au-name">${this.esc(u.name)}</div>
+              <div class="au-name">${this.esc(u.name)}<span class="au-role-badge au-role-${u.role}">${u.role === 'admin' ? '管理者' : 'ユーザー'}</span></div>
               <div class="au-email">${this.esc(u.email)}</div>
-              <div class="au-stats">${u.bookCount}帳簿 ・ ${u.totalRecords}件 ・ レシート${u.receiptCount}枚</div>
+              <div class="au-stats">${u.totalRecords}件のレコード ・ 最終: ${lastAct}</div>
             </div>
             <div class="au-controls">
-              <select class="au-select" data-uid="${u.id}" data-field="role">
-                <option value="user"${u.role==='user'?' selected':''}>ユーザー</option>
-                <option value="admin"${u.role==='admin'?' selected':''}>管理者</option>
-              </select>
-              <select class="au-select" data-uid="${u.id}" data-field="plan">
-                <option value="free"${planBadge==='free'?' selected':''}>Free</option>
-                <option value="pro"${planBadge==='pro'?' selected':''}>Pro</option>
-                <option value="business"${planBadge==='business'?' selected':''}>Business</option>
-              </select>
-              <span class="au-date">${u.created_at ? u.created_at.slice(0,10) : ''}</span>
+              <select class="au-select" data-uid="${u.id}" data-field="role"><option value="user"${u.role==='user'?' selected':''}>ユーザー</option><option value="admin"${u.role==='admin'?' selected':''}>管理者</option></select>
+              <select class="au-select" data-uid="${u.id}" data-field="plan"><option value="free"${(u.plan||'free')==='free'?' selected':''}>Free</option><option value="pro"${u.plan==='pro'?' selected':''}>Pro</option><option value="business"${u.plan==='business'?' selected':''}>Business</option></select>
             </div>
           </div>`;
       }).join('');
-
-      // role/plan 変更イベント
-      qs('#admin-users').querySelectorAll('.au-select').forEach(sel => {
+      qs('#admin-users-list').querySelectorAll('.au-select').forEach(sel => {
         sel.addEventListener('change', async () => {
-          const uid = sel.dataset.uid;
-          const field = sel.dataset.field;
-          const body = {};
-          body[field] = sel.value;
+          const body = {}; body[sel.dataset.field] = sel.value;
           try {
-            await this.api(`/api/admin/user/${uid}`, { method: 'PUT', body: JSON.stringify(body) });
-            this.toast(`${field === 'role' ? '権限' : 'プラン'}を変更しました`, 'success');
+            await this.api(`/api/admin/user/${sel.dataset.uid}`, { method: 'PUT', body: JSON.stringify(body) });
+            this.toast(`${sel.dataset.field === 'role' ? '権限' : 'プラン'}を変更しました`, 'success');
           } catch (err) { this.toast(err.message, 'error'); }
         });
       });
+      qs('#admin-users-section').style.display = '';
 
-      // ストレージ
-      const s = d.storage;
-      const totalKB = s.dbSizeKB + s.receiptSizeKB;
-      const dbPct = totalKB ? Math.round(s.dbSizeKB / totalKB * 100) : 0;
-      const imgPct = totalKB ? Math.round(s.receiptSizeKB / totalKB * 100) : 0;
-      const dbMB = s.dbSizeKB < 1024 ? `${s.dbSizeKB} KB` : `${(s.dbSizeKB/1024).toFixed(1)} MB`;
-      const imgMB = (s.receiptSizeKB / 1024).toFixed(1);
-      const lastBk = s.backups.length ? s.backups[0].replace('backup_','').replace('.sqlite','') : 'なし';
+      // --- ストレージ ---
+      const dbMB = sys.dbSizeKB < 1024 ? `${sys.dbSizeKB} KB` : `${(sys.dbSizeKB/1024).toFixed(1)} MB`;
+      const imgMB = (sys.receiptSizeKB / 1024).toFixed(1);
+      const totalKB = sys.dbSizeKB + sys.receiptSizeKB;
+      const dbPct = totalKB ? Math.round(sys.dbSizeKB / totalKB * 100) : 0;
+      const imgPct = totalKB ? Math.round(sys.receiptSizeKB / totalKB * 100) : 0;
       qs('#admin-storage').innerHTML = `
-        <div class="storage-bar-wrap">
-          <div class="storage-bar-label"><span class="storage-bar-name">データベース</span><span class="storage-bar-val">${dbMB}</span></div>
-          <div class="storage-bar"><div class="storage-bar-fill db" style="width:${Math.max(dbPct,5)}%"></div></div>
-        </div>
-        <div class="storage-bar-wrap">
-          <div class="storage-bar-label"><span class="storage-bar-name">レシート画像</span><span class="storage-bar-val">${imgMB} MB (${s.receiptFiles}枚)</span></div>
-          <div class="storage-bar"><div class="storage-bar-fill img" style="width:${Math.max(imgPct,5)}%"></div></div>
-        </div>
-        <div class="storage-detail">
-          <div class="storage-detail-item"><span class="storage-detail-val">${s.backups.length}</span><span class="storage-detail-label">バックアップ数</span></div>
-          <div class="storage-detail-item"><span class="storage-detail-val">${lastBk}</span><span class="storage-detail-label">最終バックアップ</span></div>
-        </div>`;
-    } catch {
-      qs('#admin-users-loading').innerHTML = '<span style="color:var(--text3);font-size:13px">管理者データ取得失敗</span>';
+        <div class="storage-bar-wrap"><div class="storage-bar-label"><span class="storage-bar-name">DB</span><span class="storage-bar-val">${dbMB}</span></div><div class="storage-bar"><div class="storage-bar-fill db" style="width:${Math.max(dbPct,5)}%"></div></div></div>
+        <div class="storage-bar-wrap"><div class="storage-bar-label"><span class="storage-bar-name">レシート画像</span><span class="storage-bar-val">${imgMB} MB (${sys.receiptFiles}枚)</span></div><div class="storage-bar"><div class="storage-bar-fill img" style="width:${Math.max(imgPct,5)}%"></div></div></div>
+      `;
+      qs('#admin-storage-section').style.display = '';
+
+    } catch (err) {
+      qs('#admin-loading').innerHTML = '<span style="color:var(--red);font-size:13px">管理者データ取得失敗</span>';
+      console.error('Admin dashboard error:', err);
     }
+  },
+
+  calcUptime(startISO) {
+    const diff = Date.now() - new Date(startISO).getTime();
+    const hrs = Math.floor(diff / 3600000);
+    const mins = Math.floor((diff % 3600000) / 60000);
+    if (hrs >= 24) { const days = Math.floor(hrs / 24); return `${days}日${hrs % 24}時間`; }
+    return `${hrs}時間${mins}分`;
+  },
+
+  renderAdminChart(dailyActive) {
+    if (this.adminChart) this.adminChart.destroy();
+    const ctx = qs('#admin-daily-chart').getContext('2d');
+    this.adminChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: dailyActive.map(d => { const p = d.date.split('-'); return `${parseInt(p[1])}/${parseInt(p[2])}`; }),
+        datasets: [{
+          label: 'DAU',
+          data: dailyActive.map(d => d.count),
+          borderColor: '#6366f1',
+          backgroundColor: 'rgba(99,102,241,.1)',
+          fill: true, tension: 0.4, borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#6366f1'
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: '#f1f5f9' } }, x: { grid: { display: false } } }
+      }
+    });
+  },
+
+  openInquiryReply(inq) {
+    if (!inq) return;
+    qs('#admin-reply-title').textContent = `返信: ${inq.subject}`;
+    qs('#admin-reply-detail').innerHTML = `
+      <div class="admin-reply-from"><strong>${this.esc(inq.user_name)}</strong> (${this.esc(inq.user_email)})<br><span class="admin-reply-date">${inq.created_at?.slice(0, 16).replace('T', ' ') || ''}</span></div>
+      <div class="admin-reply-msg">${this.esc(inq.message)}</div>
+    `;
+    qs('#reply-inq-id').value = inq.id;
+    qs('#reply-message').value = inq.admin_reply || '';
+    qs('#reply-status').value = inq.status === 'new' ? 'replied' : inq.status;
+    this.openOverlay('admin-reply');
   },
 
   fmtNum(n) {
@@ -771,6 +894,42 @@ const App = {
       if (!ep) return;
       qs('#emoji-picker').querySelectorAll('.ep').forEach(x => x.classList.remove('selected'));
       ep.classList.add('selected');
+    });
+
+    // 問い合わせ
+    qs('#btn-open-inquiry').addEventListener('click', () => this.openOverlay('inquiry'));
+    qs('#close-inquiry').addEventListener('click', () => this.closeOverlay('inquiry'));
+    qs('#form-inquiry').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        await this.api('/api/inquiry', { method: 'POST', body: JSON.stringify({ subject: qs('#inq-subject').value, message: qs('#inq-message').value }) });
+        this.closeOverlay('inquiry');
+        qs('#form-inquiry').reset();
+        this.toast('問い合わせを送信しました', 'success');
+        this.loadMyInquiries();
+      } catch (err) { this.toast(err.message, 'error'); }
+    });
+
+    // 管理者: 問い合わせ返信
+    qs('#close-admin-reply').addEventListener('click', () => this.closeOverlay('admin-reply'));
+    qs('#form-admin-reply').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        await this.api(`/api/admin/inquiries/${qs('#reply-inq-id').value}`, { method: 'PUT', body: JSON.stringify({ status: qs('#reply-status').value, admin_reply: qs('#reply-message').value }) });
+        this.closeOverlay('admin-reply');
+        this.toast('返信しました', 'success');
+        this.loadAdminDashboard();
+      } catch (err) { this.toast(err.message, 'error'); }
+    });
+
+    // 管理者: エラーログクリア
+    qs('#btn-clear-errors').addEventListener('click', async () => {
+      if (!confirm('エラーログをすべてクリアしますか？')) return;
+      try {
+        await this.api('/api/admin/errors', { method: 'DELETE' });
+        this.toast('ログをクリアしました', 'success');
+        this.loadAdminDashboard();
+      } catch (err) { this.toast(err.message, 'error'); }
     });
 
     // ユーザーメニュー

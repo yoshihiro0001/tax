@@ -164,22 +164,69 @@
           <button class="btn-outline btn-full" id="btn-backup">データをエクスポート</button>
         </div>
 
+        <!-- ユーザー問い合わせ -->
+        <div class="card">
+          <h3 class="card-title">💬 サポートに連絡</h3>
+          <p class="card-desc">運営チームへの問い合わせ・要望はこちらから</p>
+          <button class="btn-outline btn-full" id="btn-open-inquiry">問い合わせを送る</button>
+          <div id="my-inquiries" style="margin-top:12px"></div>
+        </div>
+
         <!-- ▼ 管理者専用エリア（admin のみ表示） -->
         <div id="admin-area" style="display:none">
-          <div class="admin-divider"><span>管理者パネル</span></div>
+          <div class="admin-divider"><span>🛡️ 運用管理パネル</span></div>
+          <div id="admin-loading" class="overview-loading"><div class="spinner"></div></div>
 
-          <!-- KPI カード -->
-          <div class="kpi-grid" id="admin-kpi"></div>
+          <!-- システムステータス -->
+          <div class="admin-section" id="admin-system-section" style="display:none">
+            <div class="admin-status-grid" id="admin-status-cards"></div>
+          </div>
 
-          <!-- ユーザー管理テーブル -->
-          <div class="card">
+          <!-- 運用KPI -->
+          <div class="admin-section" id="admin-kpi-section" style="display:none">
+            <h3 class="admin-section-title">📊 運用メトリクス</h3>
+            <div class="admin-kpi-grid" id="admin-kpi-cards"></div>
+          </div>
+
+          <!-- アクティブユーザー推移チャート -->
+          <div class="card" id="admin-chart-section" style="display:none">
+            <h3 class="card-title">📈 アクティブユーザー推移（14日）</h3>
+            <div class="admin-chart-wrap"><canvas id="admin-daily-chart"></canvas></div>
+          </div>
+
+          <!-- エラーログ -->
+          <div class="card" id="admin-errors-section" style="display:none">
+            <div class="admin-card-head">
+              <h3 class="card-title">🚨 エラーログ</h3>
+              <span class="admin-badge-count" id="admin-error-count">0</span>
+            </div>
+            <div id="admin-errors-list" class="admin-log-list"></div>
+            <button class="btn-outline btn-sm" id="btn-clear-errors" style="margin-top:8px; display:none">ログをクリア</button>
+          </div>
+
+          <!-- 問い合わせ管理 -->
+          <div class="card" id="admin-inquiries-section" style="display:none">
+            <div class="admin-card-head">
+              <h3 class="card-title">📩 問い合わせ</h3>
+              <span class="admin-badge-count admin-badge-new" id="admin-inquiry-count">0</span>
+            </div>
+            <div id="admin-inquiries-list" class="admin-inquiry-list"></div>
+          </div>
+
+          <!-- 最近のアクティビティ -->
+          <div class="card" id="admin-activity-section" style="display:none">
+            <h3 class="card-title">⚡ 最近のアクティビティ</h3>
+            <div id="admin-activity-list" class="admin-log-list"></div>
+          </div>
+
+          <!-- ユーザー管理 -->
+          <div class="card" id="admin-users-section" style="display:none">
             <h3 class="card-title">👥 ユーザー管理</h3>
-            <div id="admin-users-loading" class="overview-loading"><div class="spinner"></div></div>
-            <div id="admin-users"></div>
+            <div id="admin-users-list"></div>
           </div>
 
           <!-- ストレージ -->
-          <div class="card">
+          <div class="card" id="admin-storage-section" style="display:none">
             <h3 class="card-title">💾 ストレージ</h3>
             <div id="admin-storage"></div>
           </div>
@@ -353,6 +400,34 @@
         <div class="csv-table-wrap"><table class="csv-table"><thead><tr><th class="csv-th-ck"><input type="checkbox" id="csv-check-all" checked></th><th>日付</th><th>金額</th><th>摘要</th><th>科目</th></tr></thead><tbody id="csv-tbody"></tbody></table></div>
         <div class="csv-foot"><span id="csv-selected"></span><button class="btn-save" id="btn-csv-import">登録</button></div>
       </div>
+    </div>
+  </div>
+
+  <!-- 問い合わせモーダル -->
+  <div class="overlay" id="overlay-inquiry" style="display:none">
+    <div class="modal-sheet">
+      <div class="modal-head"><h3>問い合わせ</h3><button class="btn-close" id="close-inquiry">&times;</button></div>
+      <form id="form-inquiry" class="modal-form">
+        <div class="fg"><label>件名</label><input type="text" id="inq-subject" class="fi" placeholder="例: 機能リクエスト" required></div>
+        <div class="fg"><label>メッセージ</label><textarea id="inq-message" class="fi" rows="5" placeholder="お気軽にどうぞ" required></textarea></div>
+        <button type="submit" class="btn-save btn-full">送信</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- 管理者問い合わせ返信モーダル -->
+  <div class="overlay" id="overlay-admin-reply" style="display:none">
+    <div class="modal-sheet">
+      <div class="modal-head"><h3 id="admin-reply-title">返信</h3><button class="btn-close" id="close-admin-reply">&times;</button></div>
+      <div id="admin-reply-detail" class="admin-reply-detail"></div>
+      <form id="form-admin-reply" class="modal-form">
+        <input type="hidden" id="reply-inq-id">
+        <div class="fg"><label>返信メッセージ</label><textarea id="reply-message" class="fi" rows="4" placeholder="返信内容"></textarea></div>
+        <div class="fg"><label>ステータス</label>
+          <select id="reply-status" class="fi"><option value="replied">返信済み</option><option value="in_progress">対応中</option><option value="resolved">解決</option></select>
+        </div>
+        <button type="submit" class="btn-save btn-full">更新</button>
+      </form>
     </div>
   </div>
 
