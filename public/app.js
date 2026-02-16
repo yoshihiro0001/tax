@@ -276,6 +276,15 @@ const App = {
       qs('#home-expense').textContent = `¥${d.monthExpense.toLocaleString()}`;
       qs('#home-income').textContent = `¥${d.monthIncome.toLocaleString()}`;
       this.renderTransactions(d.recentTransactions, 'home-transactions', 'home-empty');
+      // 権限ベースUI制御
+      const b = this.currentBook;
+      const canIncome = b.memberRole === 'owner' || b.can_input_income;
+      const canExpense = b.memberRole === 'owner' || b.can_input_expense !== 0;
+      const canViewIncome = b.memberRole === 'owner' || b.can_view_income;
+      const incBtn = qs('#btn-add-income');
+      if (incBtn) incBtn.style.display = canIncome ? '' : 'none';
+      const incSection = qs('#home-income')?.closest('.dash-card');
+      if (incSection) incSection.style.display = canViewIncome ? '' : 'none';
     } catch (err) { this.toast(err.message, 'error'); }
   },
 
@@ -1096,15 +1105,19 @@ const App = {
 
   renderBookList() {
     const wrap = qs('#book-list');
-    wrap.innerHTML = this.books.map(b => `
+    wrap.innerHTML = this.books.map(b => {
+      const isOwnerOrMgr = b.memberRole === 'owner' || b.memberRole === 'manager';
+      const roleLabel = b.memberRole === 'owner' ? '' : b.memberRole === 'manager' ? '<span class="book-role-badge mgr">管理者</span>' : '<span class="book-role-badge mem">メンバー</span>';
+      return `
       <div class="book-item${b.id === this.currentBook?.id ? ' active' : ''}" data-id="${b.id}">
         <span class="book-item-emoji">${b.emoji}</span>
-        <span class="book-item-name">${this.esc(b.name)}</span>
+        <span class="book-item-name">${this.esc(b.name)}${roleLabel}</span>
         <div class="book-item-actions">
-          <button class="book-item-btn danger" data-action="delete" data-id="${b.id}" title="削除">✕</button>
+          ${isOwnerOrMgr ? `<button class="book-item-btn" data-action="members" data-id="${b.id}" title="メンバー管理">👥</button>` : ''}
+          ${b.memberRole === 'owner' ? `<button class="book-item-btn danger" data-action="delete" data-id="${b.id}" title="削除">✕</button>` : ''}
         </div>
-      </div>
-    `).join('');
+      </div>`;
+    }).join('');
     wrap.querySelectorAll('.book-item-btn[data-action="delete"]').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -1120,6 +1133,109 @@ const App = {
           }
           this.renderBookList();
           this.toast('帳簿を削除しました');
+        } catch (err) { this.toast(err.message, 'error'); }
+      });
+    });
+    wrap.querySelectorAll('.book-item-btn[data-action="members"]').forEach(btn => {
+      btn.addEventListener('click', (e) => { e.stopPropagation(); this.openMemberManager(btn.dataset.id); });
+    });
+  },
+
+  async openMemberManager(bookId) {
+    this._memberBookId = bookId;
+    const book = this.books.find(b => b.id == bookId);
+    qs('#members-title').textContent = `${book?.emoji || '📒'} ${book?.name || '帳簿'} のメンバー`;
+    this.openOverlay('members');
+    qs('#members-list').innerHTML = '<div class="overview-loading"><div class="spinner"></div></div>';
+    try {
+      const d = await this.api(`/api/books/${bookId}/members`);
+      this._memberData = d;
+      this.renderMemberList(d, bookId);
+    } catch (err) { qs('#members-list').innerHTML = `<div class="aud-empty">${err.message}</div>`; }
+
+    // 追加ボタン
+    qs('#btn-add-member').onclick = async () => {
+      const email = qs('#member-email').value.trim();
+      if (!email) { this.toast('メールアドレスを入力してください', 'error'); return; }
+      try {
+        await this.api(`/api/books/${bookId}/members`, { method: 'POST', body: JSON.stringify({
+          email,
+          role: qs('#mp-role').value,
+          can_input_expense: qs('#mp-expense-input').checked,
+          can_input_income: qs('#mp-income-input').checked,
+          can_view_income: qs('#mp-income-view').checked,
+          can_view_all_expenses: qs('#mp-expense-view').checked
+        })});
+        this.toast('メンバーを追加しました', 'success');
+        qs('#member-email').value = '';
+        this.openMemberManager(bookId);
+      } catch (err) { this.toast(err.message, 'error'); }
+    };
+
+    // モーダルクローズ
+    qs('#close-members').onclick = () => this.closeOverlay('members');
+  },
+
+  renderMemberList(data, bookId) {
+    const { owner, members } = data;
+    const permLabel = (v) => v ? '✓' : '—';
+    let html = `
+      <div class="mem-item mem-owner">
+        <div class="mem-avatar">${owner.avatar_url ? `<img src="${owner.avatar_url}">` : owner.name.charAt(0).toUpperCase()}</div>
+        <div class="mem-info">
+          <div class="mem-name">${this.esc(owner.name)} <span class="mem-badge owner">オーナー</span></div>
+          <div class="mem-email">${this.esc(owner.email)}</div>
+        </div>
+      </div>`;
+
+    if (members.length === 0) {
+      html += '<div class="mem-empty">まだメンバーがいません</div>';
+    } else {
+      members.forEach(m => {
+        const roleBadge = m.role === 'manager' ? '<span class="mem-badge mgr">管理者</span>' : '<span class="mem-badge mem">メンバー</span>';
+        html += `
+          <div class="mem-item">
+            <div class="mem-avatar">${m.avatar_url ? `<img src="${m.avatar_url}">` : m.name.charAt(0).toUpperCase()}</div>
+            <div class="mem-info">
+              <div class="mem-name">${this.esc(m.name)} ${roleBadge}</div>
+              <div class="mem-email">${this.esc(m.email)}</div>
+              <div class="mem-perms">
+                <span class="mem-perm ${m.can_input_expense ? 'on' : ''}">経費入力${permLabel(m.can_input_expense)}</span>
+                <span class="mem-perm ${m.can_input_income ? 'on' : ''}">収入入力${permLabel(m.can_input_income)}</span>
+                <span class="mem-perm ${m.can_view_income ? 'on' : ''}">収入閲覧${permLabel(m.can_view_income)}</span>
+                <span class="mem-perm ${m.can_view_all_expenses ? 'on' : ''}">全経費閲覧${permLabel(m.can_view_all_expenses)}</span>
+              </div>
+            </div>
+            <div class="mem-actions">
+              <select class="au-select mem-role-sel" data-mid="${m.id}">
+                <option value="member"${m.role==='member'?' selected':''}>メンバー</option>
+                <option value="manager"${m.role==='manager'?' selected':''}>管理者</option>
+              </select>
+              <button class="mem-remove-btn" data-mid="${m.id}" title="削除">✕</button>
+            </div>
+          </div>`;
+      });
+    }
+    qs('#members-list').innerHTML = html;
+
+    // 権限変更
+    qs('#members-list').querySelectorAll('.mem-role-sel').forEach(sel => {
+      sel.addEventListener('change', async () => {
+        try {
+          await this.api(`/api/books/${bookId}/members/${sel.dataset.mid}`, { method: 'PUT', body: JSON.stringify({ role: sel.value }) });
+          this.toast('権限を変更しました', 'success');
+        } catch (err) { this.toast(err.message, 'error'); }
+      });
+    });
+
+    // 削除
+    qs('#members-list').querySelectorAll('.mem-remove-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('このメンバーを外しますか？')) return;
+        try {
+          await this.api(`/api/books/${bookId}/members/${btn.dataset.mid}`, { method: 'DELETE' });
+          this.toast('メンバーを外しました', 'success');
+          this.openMemberManager(bookId);
         } catch (err) { this.toast(err.message, 'error'); }
       });
     });

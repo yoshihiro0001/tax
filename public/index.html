@@ -446,6 +446,32 @@
     </div>
   </div>
 
+  <!-- メンバー管理モーダル -->
+  <div class="overlay" id="overlay-members" style="display:none">
+    <div class="modal-sheet">
+      <div class="modal-head"><h3 id="members-title">メンバー管理</h3><button class="btn-close" id="close-members">&times;</button></div>
+      <div id="members-list"></div>
+      <div class="member-add-section">
+        <div class="member-add-title">メンバーを追加</div>
+        <div class="fg"><input type="email" id="member-email" class="fi" placeholder="メールアドレスを入力"></div>
+        <div class="member-perm-grid">
+          <label class="member-perm-item"><input type="checkbox" id="mp-expense-input" checked><span>経費入力</span></label>
+          <label class="member-perm-item"><input type="checkbox" id="mp-income-input"><span>収入入力</span></label>
+          <label class="member-perm-item"><input type="checkbox" id="mp-income-view"><span>収入閲覧</span></label>
+          <label class="member-perm-item"><input type="checkbox" id="mp-expense-view"><span>全経費閲覧</span></label>
+        </div>
+        <div class="member-role-row">
+          <label>権限レベル</label>
+          <select class="fi" id="mp-role">
+            <option value="member">メンバー（入力のみ）</option>
+            <option value="manager">管理者（メンバー管理可）</option>
+          </select>
+        </div>
+        <button class="btn-save btn-full" id="btn-add-member">追加する</button>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>

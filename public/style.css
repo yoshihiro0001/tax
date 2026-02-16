@@ -554,6 +554,64 @@ body { min-height: 100dvh; }
 .rank-val { width: 56px; font-size: 11px; font-weight: 600; text-align: right; flex-shrink: 0; color: var(--text2); }
 
 /* ============================================
+   メンバー管理モーダル
+   ============================================ */
+.mem-item {
+  display: flex; align-items: center; gap: 10px; padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.mem-item:last-child { border-bottom: none; }
+.mem-owner { background: var(--pri-bg); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 8px; border: none; }
+.mem-avatar {
+  width: 36px; height: 36px; border-radius: 999px; background: var(--pri-bg); color: var(--pri);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px;
+  flex-shrink: 0; overflow: hidden;
+}
+.mem-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.mem-info { flex: 1; min-width: 0; }
+.mem-name { font-size: 13px; font-weight: 600; }
+.mem-email { font-size: 11px; color: var(--text3); }
+.mem-badge {
+  display: inline-block; padding: 1px 6px; border-radius: 999px; font-size: 9px; font-weight: 700;
+  margin-left: 4px; vertical-align: middle;
+}
+.mem-badge.owner { background: var(--pri-bg); color: var(--pri); }
+.mem-badge.mgr { background: #fef3c7; color: #d97706; }
+.mem-badge.mem { background: var(--bg); color: var(--text3); }
+.mem-perms { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.mem-perm {
+  font-size: 10px; padding: 2px 6px; border-radius: 4px;
+  background: var(--bg); color: var(--text3);
+}
+.mem-perm.on { background: #dcfce7; color: #16a34a; }
+.mem-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+.mem-remove-btn {
+  width: 24px; height: 24px; border: none; background: var(--red-bg, #fee2e2); color: var(--red);
+  border-radius: 6px; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.mem-empty { text-align: center; padding: 16px; color: var(--text3); font-size: 13px; }
+
+/* メンバー追加セクション */
+.member-add-section { margin-top: 16px; padding-top: 16px; border-top: 2px solid var(--border); }
+.member-add-title { font-size: 13px; font-weight: 700; margin-bottom: 10px; }
+.member-perm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 10px 0; }
+.member-perm-item {
+  display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 8px 10px;
+  background: var(--bg); border-radius: var(--radius-xs); cursor: pointer;
+}
+.member-perm-item input { accent-color: var(--pri); }
+.member-role-row { margin-bottom: 12px; }
+.member-role-row label { font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px; }
+
+/* 帳簿リスト: ロールバッジ */
+.book-role-badge {
+  display: inline-block; padding: 1px 6px; border-radius: 999px; font-size: 9px; font-weight: 700;
+  margin-left: 6px; vertical-align: middle;
+}
+.book-role-badge.mgr { background: #fef3c7; color: #d97706; }
+.book-role-badge.mem { background: var(--bg); color: var(--text3); }
+
+/* ============================================
    取引履歴ビュー
    ============================================ */
 .filter-bar {
