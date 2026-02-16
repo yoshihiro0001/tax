@@ -24,6 +24,8 @@ const App = {
     { id: 'fees', name: '支払手数料', icon: '🏦' },
     { id: 'home_office', name: '家事按分', icon: '🏠' },
     { id: 'depreciation', name: '減価償却費', icon: '💻' },
+    { id: 'medical', name: '医療費', icon: '🏥' },
+    { id: 'insurance', name: '保険料', icon: '🛡' },
     { id: 'misc', name: '雑費', icon: '📌' }
   ],
 
@@ -449,10 +451,12 @@ const App = {
     qs('#btn-cf-save').onclick = () => this.saveFromConfirm();
   },
 
-  suggestCategory(desc) {
+  suggestCategory(desc, amount) {
     if (!desc) return 'misc';
     const d = desc.toLowerCase();
     const map = {
+      medical: ['病院','医院','クリニック','歯科','薬局','薬店','ドラッグ','調剤','診療','処方','眼科','皮膚科','内科','外科','整骨','接骨','治療','健診','人間ドック','医療'],
+      insurance: ['保険','生命保険','損害保険','健康保険','国民健康','年金','共済','社会保険'],
       travel: ['交通','電車','JR','suica','タクシー','バス','新幹線','高速','ETC','ガソリン','駐車'],
       communication: ['通信','携帯','ソフトバンク','au','docomo','AWS','サーバー','Zoom'],
       supplies: ['Amazon','アマゾン','ヨドバシ','文具','コピー','100均','ダイソー','消耗品'],
@@ -461,11 +465,13 @@ const App = {
       outsourcing: ['外注','業務委託','ランサーズ','クラウドワークス'],
       fees: ['手数料','PayPal','Stripe','振込','ATM'],
       home_office: ['電気','ガス','水道','家賃'],
-      depreciation: ['パソコン','PC','Mac','iPhone','iPad','カメラ','モニター']
+      depreciation: ['パソコン','PC','Mac','iPhone','iPad','カメラ','モニター','プリンター']
     };
     for (const [cat, kws] of Object.entries(map)) {
       for (const kw of kws) { if (d.includes(kw.toLowerCase())) return cat; }
     }
+    // 金額ベース: 10万円以上の購入は減価償却候補
+    if (amount && amount >= 100000) return 'depreciation';
     return 'misc';
   },
 
@@ -487,7 +493,7 @@ const App = {
     try {
       await fetch(BASE + '/api/expense', { method: 'POST', body: fd, credentials: 'same-origin' });
       this.closeOverlay('confirm');
-      this.showSuccess(qs('#cf-amount').value, qs('#cf-desc').value, this.categoryName(catEl.dataset.cat));
+      this.showSuccess(qs('#cf-amount').value, qs('#cf-desc').value, this.categoryName(catEl.dataset.cat), catEl.dataset.cat);
       this.loadDashboard();
     } catch (err) { this.toast(err.message, 'error'); }
     btn.disabled = false; btn.textContent = '保存する';
@@ -496,10 +502,28 @@ const App = {
   // ========================================
   // 成功画面
   // ========================================
-  showSuccess(amount, desc, catName) {
+  showSuccess(amount, desc, catName, category) {
     this.openOverlay('success');
     qs('#success-summary').textContent = `${desc || catName} ¥${parseInt(amount).toLocaleString()}`;
     this.createConfetti();
+
+    // 高額経費→減価償却の自動提案
+    const amt = parseInt(amount);
+    if (amt >= 100000 && category === 'depreciation') {
+      setTimeout(() => {
+        if (confirm(`¥${amt.toLocaleString()} の経費が登録されました。\n\nこれは減価償却資産として登録しますか？\n（PC: 4年, 車両: 6年, 家具: 8年）`)) {
+          const life = prompt('耐用年数（年）:', '4');
+          if (life) {
+            this.api('/api/depreciations', { method: 'POST', body: JSON.stringify({
+              bookId: this.currentBook.id, name: desc || catName,
+              purchase_date: new Date().toISOString().slice(0, 10),
+              purchase_amount: amt, useful_life: parseInt(life) || 4
+            })}).then(() => this.toast('減価償却資産に登録しました', 'success'))
+              .catch(err => this.toast(err.message, 'error'));
+          }
+        }
+      }, 500);
+    }
 
     qs('#btn-ss-another').onclick = () => {
       this.closeOverlay('success');
@@ -694,15 +718,41 @@ const App = {
     if (deps.length === 0) {
       wrap.innerHTML = '<div class="dep-empty">減価償却資産はありません</div>';
     } else {
-      wrap.innerHTML = deps.map(d => `
-        <div class="dep-item">
+      wrap.innerHTML = deps.map(d => {
+        const isSold = !!d.sold_date;
+        const pct = d.depreciatedPercent || 0;
+        const remainTxt = isSold ? '売却済み' : d.remainingMonths > 0 ? `残り${Math.floor(d.remainingMonths/12)}年${d.remainingMonths%12}ヶ月` : '償却完了';
+        const statusCls = isSold ? 'sold' : d.remainingMonths <= 0 ? 'done' : '';
+        return `
+        <div class="dep-item ${statusCls}">
           <div class="dep-info">
-            <div class="dep-name">${this.esc(d.name)}</div>
-            <div class="dep-detail">取得: ¥${d.purchase_amount.toLocaleString()} ・ ${d.useful_life}年償却 ・ ${d.purchase_date}</div>
+            <div class="dep-name">${this.esc(d.name)} ${isSold ? '<span class="dep-sold-badge">売却済</span>' : ''}</div>
+            <div class="dep-detail">取得: ¥${d.purchase_amount.toLocaleString()} ・ ${d.useful_life}年 ・ ${d.purchase_date}</div>
+            <div class="dep-progress"><div class="dep-progress-fill" style="width:${pct}%"></div></div>
+            <div class="dep-remain">${remainTxt}${isSold ? ` (売却額: ¥${(d.sold_amount||0).toLocaleString()})` : ''}</div>
           </div>
-          <span class="dep-amount">¥${d.yearAmount.toLocaleString()}/年</span>
-          <button class="dep-del" data-id="${d.id}">✕</button>
-        </div>`).join('');
+          <span class="dep-amount">${d.yearAmount > 0 ? `¥${d.yearAmount.toLocaleString()}/年` : '—'}</span>
+          <div class="dep-actions">
+            ${!isSold ? `<button class="dep-sell-btn" data-id="${d.id}" title="売却">💰</button>` : ''}
+            <button class="dep-del" data-id="${d.id}">✕</button>
+          </div>
+        </div>`;
+      }).join('');
+
+      wrap.querySelectorAll('.dep-sell-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const soldDate = prompt('売却日（YYYY-MM-DD）:', new Date().toISOString().slice(0, 10));
+          if (!soldDate) return;
+          const soldAmt = prompt('売却金額（円）:');
+          if (!soldAmt) return;
+          try {
+            await this.api(`/api/depreciations/${btn.dataset.id}/sell`, { method: 'PUT', body: JSON.stringify({ sold_date: soldDate, sold_amount: parseInt(soldAmt.replace(/[^0-9]/g, '')) }) });
+            this.toast('売却を記録しました', 'success');
+            this.loadReport();
+          } catch (err) { this.toast(err.message, 'error'); }
+        });
+      });
+
       wrap.querySelectorAll('.dep-del').forEach(btn => {
         btn.addEventListener('click', async () => {
           if (!confirm('この資産を削除しますか？')) return;

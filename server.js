@@ -54,6 +54,8 @@ try { db.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'"); } catch 
 try { db.exec("ALTER TABLE users ADD COLUMN plan TEXT DEFAULT 'free'"); } catch (e) {}
 try { db.exec("ALTER TABLE expenses ADD COLUMN created_by INTEGER"); } catch (e) {}
 try { db.exec("ALTER TABLE income ADD COLUMN income_type TEXT DEFAULT 'business'"); } catch (e) {}
+try { db.exec("ALTER TABLE depreciations ADD COLUMN sold_date TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE depreciations ADD COLUMN sold_amount INTEGER DEFAULT 0"); } catch (e) {}
 
 // === テーブル作成 ===
 db.exec(`
@@ -140,6 +142,8 @@ db.exec(`
     purchase_amount INTEGER NOT NULL,
     useful_life INTEGER NOT NULL DEFAULT 4,
     method TEXT DEFAULT 'straight',
+    sold_date TEXT,
+    sold_amount INTEGER DEFAULT 0,
     memo TEXT,
     created_at TEXT DEFAULT (datetime('now','localtime')),
     FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
@@ -242,6 +246,8 @@ function bookAccess(req) {
 
 // === 科目自動推定 ===
 const categoryKeywords = {
+  medical: ['病院','医院','クリニック','歯科','薬局','薬店','ドラッグ','調剤','診療','処方','眼科','皮膚科','内科','外科','整骨','接骨','治療','健診','人間ドック','医療'],
+  insurance: ['保険','生命保険','損害保険','健康保険','国民健康','年金','共済','社会保険'],
   travel: ['交通','電車','JR','Suica','PASMO','タクシー','バス','新幹線','ANA','JAL','航空','高速','ETC','ガソリン','駐車','鉄道','Uber'],
   communication: ['通信','電話','携帯','ソフトバンク','au','docomo','NTT','WiFi','AWS','サーバー','ドメイン','Zoom','Slack','Vercel','Heroku'],
   supplies: ['Amazon','アマゾン','ヨドバシ','ビックカメラ','文具','事務','コピー','用紙','インク','100均','ダイソー','ニトリ','IKEA','消耗品','LOFT','ハンズ'],
@@ -252,6 +258,13 @@ const categoryKeywords = {
   home_office: ['電気','ガス','水道','家賃','光熱'],
   depreciation: ['パソコン','PC','Mac','MacBook','iPhone','iPad','カメラ','ディスプレイ','モニター','プリンター']
 };
+
+function suggestCategoryWithAmount(desc, amount) {
+  const cat = suggestCategory(desc);
+  if (cat !== 'misc') return cat;
+  if (amount && amount >= 100000) return 'depreciation';
+  return 'misc';
+}
 
 function suggestCategory(desc) {
   if (!desc) return 'misc';
@@ -727,6 +740,17 @@ function calcDepreciationForYear(dep, year) {
   const purchaseMonth = parseInt(dep.purchase_date.slice(5, 7));
   const y = parseInt(year);
   if (y < purchaseYear) return 0;
+  // 売却済みの場合、売却年以降は0
+  if (dep.sold_date) {
+    const soldYear = parseInt(dep.sold_date.slice(0, 4));
+    if (y > soldYear) return 0;
+    // 売却年は売却月までの月割り
+    if (y === soldYear) {
+      const soldMonth = parseInt(dep.sold_date.slice(5, 7));
+      const yearlyAmount = Math.floor(dep.purchase_amount / dep.useful_life);
+      return Math.floor(yearlyAmount * soldMonth / 12);
+    }
+  }
   const life = dep.useful_life;
   const yearlyAmount = Math.floor(dep.purchase_amount / life);
   const elapsed = y - purchaseYear;
@@ -736,6 +760,21 @@ function calcDepreciationForYear(dep, year) {
     return Math.floor(yearlyAmount * months / 12);
   }
   return yearlyAmount;
+}
+
+function calcDepreciationRemaining(dep) {
+  const purchaseDate = new Date(dep.purchase_date);
+  const endDate = new Date(purchaseDate);
+  endDate.setFullYear(endDate.getFullYear() + dep.useful_life);
+  if (dep.sold_date) return { months: 0, percent: 0 };
+  const now = new Date();
+  if (now >= endDate) return { months: 0, percent: 100 };
+  const totalMonths = dep.useful_life * 12;
+  const elapsedMs = now - purchaseDate;
+  const elapsedMonths = Math.floor(elapsedMs / (30.44 * 24 * 60 * 60 * 1000));
+  const remaining = Math.max(0, totalMonths - elapsedMonths);
+  const percent = Math.round(elapsedMonths / totalMonths * 100);
+  return { months: remaining, percent: Math.min(percent, 100) };
 }
 
 // 所得区分別ラベル
@@ -774,16 +813,30 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
     const depDetails = deps.map(d => {
       const amt = calcDepreciationForYear(d, year);
       totalDepreciation += amt;
-      return { ...d, yearAmount: amt };
-    }).filter(d => d.yearAmount > 0);
+      const remaining = calcDepreciationRemaining(d);
+      return { ...d, yearAmount: amt, remainingMonths: remaining.months, depreciatedPercent: remaining.percent };
+    });
+
+    // 経費カテゴリから自動検出される控除
+    const medicalExpenses = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND strftime('%Y',date)=? AND category='medical'").get(book.id, year).t;
+    const insuranceExpenses = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND strftime('%Y',date)=? AND category='insurance'").get(book.id, year).t;
 
     // 控除
     const deductions = db.prepare('SELECT * FROM deductions WHERE book_id=? AND year=?').all(book.id, year);
     let totalDeductions = 0;
-    const hasBlue = deductions.some(d => d.type === 'blue_return');
     const hasBasic = deductions.some(d => d.type === 'basic');
+    const hasMedical = deductions.some(d => d.type === 'medical');
+    const hasInsurance = deductions.some(d => d.type === 'social_insurance');
     const deductionList = [];
     if (!hasBasic) deductionList.push({ type: 'basic', name: '基礎控除', amount: 480000, auto: true });
+    // 医療費控除: 10万円を超えた分が控除（自動計算）
+    if (!hasMedical && medicalExpenses > 100000) {
+      deductionList.push({ type: 'medical', name: '医療費控除（自動計算）', amount: medicalExpenses - 100000, auto: true });
+    }
+    // 社会保険料控除: 保険カテゴリの経費全額が控除（自動計算）
+    if (!hasInsurance && insuranceExpenses > 0) {
+      deductionList.push({ type: 'social_insurance', name: '社会保険料控除（自動計算）', amount: insuranceExpenses, auto: true });
+    }
     deductions.forEach(d => { deductionList.push({ ...d, auto: false }); });
     totalDeductions = deductionList.reduce((s, d) => s + d.amount, 0);
 
@@ -892,6 +945,17 @@ router.post('/api/depreciations', auth, (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// 減価償却: 売却登録
+router.put('/api/depreciations/:id/sell', auth, (req, res) => {
+  try {
+    const { sold_date, sold_amount } = req.body;
+    const d = db.prepare('SELECT d.* FROM depreciations d JOIN books b ON d.book_id=b.id WHERE d.id=? AND b.user_id=?').get(req.params.id, req.userId);
+    if (!d) return res.status(404).json({ error: '見つかりません' });
+    db.prepare('UPDATE depreciations SET sold_date=?, sold_amount=? WHERE id=?').run(sold_date, parseInt(sold_amount) || 0, d.id);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.delete('/api/depreciations/:id', auth, (req, res) => {
   try {
     const d = db.prepare('SELECT d.* FROM depreciations d JOIN books b ON d.book_id=b.id WHERE d.id=? AND b.user_id=?').get(req.params.id, req.userId);
@@ -932,7 +996,7 @@ router.post('/api/preview-csv', auth, upload.single('csv'), (req, res) => {
       const desc = row['利用店舗']||row['ご利用先']||row['摘要']||row['Description']||row['ご利用先など']||row['利用先']||'';
       const date = normalizeDate(rawDate);
       const amount = Math.abs(parseInt(String(rawAmt).replace(/[^0-9\-]/g,''))||0);
-      if (date && amount > 0) rows.push({ date, amount, description: desc.trim(), category: suggestCategory(desc) });
+      if (date && amount > 0) rows.push({ date, amount, description: desc.trim(), category: suggestCategoryWithAmount(desc, amount) });
     }
     fs.unlinkSync(req.file.path);
     res.json({ success: true, rows });

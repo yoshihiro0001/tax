@@ -289,6 +289,19 @@ body { min-height: 100dvh; }
 }
 .ded-empty, .dep-empty { text-align: center; padding: 12px; color: var(--text3); font-size: 12px; }
 
+/* 減価償却: 進捗バー */
+.dep-progress { height: 4px; background: var(--bg); border-radius: 2px; margin-top: 4px; overflow: hidden; }
+.dep-progress-fill { height: 100%; background: var(--pri); border-radius: 2px; transition: width .4s ease; }
+.dep-remain { font-size: 10px; color: var(--text3); margin-top: 2px; }
+.dep-sold-badge { display: inline-block; padding: 1px 5px; border-radius: 4px; font-size: 9px; font-weight: 700; background: #fee2e2; color: var(--red); margin-left: 4px; }
+.dep-item.sold { opacity: .6; }
+.dep-item.done .dep-progress-fill { background: var(--green); }
+.dep-actions { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+.dep-sell-btn {
+  width: 24px; height: 24px; border: none; background: #fef3c7; border-radius: 6px;
+  font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+
 /* (keep old classes for backwards compat) */
 .report-summary { display: none; }
 .rpt-row { display: flex; justify-content: space-between; padding: 10px 0; }
