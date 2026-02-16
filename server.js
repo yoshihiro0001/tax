@@ -850,7 +850,7 @@ router.get('/api/summary/:year', auth, (req, res) => {
     const mi = db.prepare(`SELECT strftime('%m',date) as month,SUM(amount) as total FROM income WHERE book_id=? ${approvedFilter} AND strftime('%Y',date)=? GROUP BY strftime('%m',date)`).all(book.id,year);
     const me2 = db.prepare(`SELECT strftime('%m',date) as month,SUM(amount) as total FROM expenses WHERE book_id=? ${approvedFilter} AND strftime('%Y',date)=? GROUP BY strftime('%m',date)`).all(book.id,year);
     // 収入区分別内訳
-    const incomeBreakdown = db.prepare(`SELECT COALESCE(income_type,'business') as income_type, SUM(amount) as total, COUNT(*) as count FROM income WHERE book_id=? ${approvedFilter} AND strftime('%Y',date)=? GROUP BY income_type ORDER BY total DESC`).all(book.id, year);
+    const incomeBreakdown = db.prepare(`SELECT COALESCE(income_type,'business') as income_type, SUM(amount) as total, COUNT(*) as count FROM income WHERE book_id=? ${approvedFilter} AND strftime('%Y',date)=? GROUP BY COALESCE(income_type,'business') ORDER BY total DESC`).all(book.id, year);
 
     res.json({ year, income:inc.total, expenses:exp.total, profit:inc.total-exp.total, breakdown, incomeBreakdown, monthlyIncome:mi, monthlyExpense:me2 });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -948,7 +948,7 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
     const year = req.params.year;
 
     // 収入（区分別、承認済みのみ）
-    const incomeByType = db.prepare("SELECT COALESCE(income_type,'business') as income_type, SUM(amount) as total FROM income WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=? GROUP BY income_type").all(book.id, year);
+    const incomeByType = db.prepare("SELECT COALESCE(income_type,'business') as income_type, SUM(amount) as total FROM income WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=? GROUP BY COALESCE(income_type,'business')").all(book.id, year);
     const totalIncome = incomeByType.reduce((s, r) => s + r.total, 0);
     const businessIncome = incomeByType.find(r => r.income_type === 'business')?.total || 0;
     const separateIncome = incomeByType.find(r => r.income_type === 'fx_stock')?.total || 0;
@@ -1005,19 +1005,95 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
     let currentBracket = INCOME_TAX_BRACKETS[0];
     for (const b of INCOME_TAX_BRACKETS) { if (taxableIncome <= b.limit) { currentBracket = b; break; } }
 
-    // 「あといくら経費を使えばいくら下がるか」提案
-    const tips = [];
-    if (taxableIncome > 0) {
-      const amounts = [50000, 100000, 200000, 500000];
-      for (const extra of amounts) {
-        const newTaxable = Math.max(0, taxableIncome - extra);
-        const newIncomeTax = calcIncomeTax(newTaxable);
-        const newRecon = Math.floor(newIncomeTax * 0.021);
-        const newResident = calcResidentTax(newTaxable);
-        const newTotal = newIncomeTax + newRecon + newResident + separateTax;
-        const saving = totalTax - newTotal;
-        if (saving > 0) tips.push({ extraExpense: extra, saving, newTotalTax: newTotal });
+    // 収入区分別の税額内訳（カテゴリ別把握）
+    const taxByIncomeType = incomeByType.map(r => {
+      const label = INCOME_TYPE_LABELS[r.income_type] || r.income_type;
+      if (r.income_type === 'fx_stock') {
+        const tax = Math.floor(r.total * 0.20315);
+        return { income_type: r.income_type, label, amount: r.total, taxRate: 20.315, taxRateLabel: '20.315%（所得税15.315% + 住民税5%）', taxAmount: tax, method: '申告分離課税' };
+      } else {
+        return { income_type: r.income_type, label, amount: r.total, taxRate: null, taxRateLabel: '総合課税（累進税率）', taxAmount: null, method: '総合課税' };
       }
+    });
+
+    // 総合課税の税率・税額詳細
+    const comprehensiveTaxDetail = {
+      income: comprehensiveIncome,
+      expenses: totalExpenses,
+      depreciation: totalDepreciation,
+      netIncome: netBusinessIncome,
+      deductions: totalDeductions,
+      taxableIncome: taxableIncome,
+      incomeTaxRate: currentBracket.rate,
+      incomeTaxRatePercent: Math.round(currentBracket.rate * 100),
+      incomeTax,
+      reconstructionTax,
+      residentTaxRate: 10,
+      residentTax,
+      totalComprehensiveTax: incomeTax + reconstructionTax + residentTax
+    };
+
+    // 経費カテゴリ別の節税効果
+    const expenseCategories = db.prepare(`SELECT category, SUM(amount) as total, COUNT(*) as count FROM expenses WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=? GROUP BY category ORDER BY total DESC`).all(book.id, year);
+    const effectiveRate = taxableIncome > 0 ? (currentBracket.rate + 0.10 + currentBracket.rate * 0.021) : 0;
+    const expenseTaxImpact = expenseCategories.map(c => ({
+      category: c.category,
+      total: c.total,
+      count: c.count,
+      taxSaving: Math.floor(c.total * effectiveRate),
+      effectiveRate: Math.round(effectiveRate * 1000) / 10
+    }));
+
+    // カテゴリ別節税ヒント（大きい順）
+    const tips = [];
+    const CATEGORY_TIPS = {
+      travel: { name: '旅費交通費', hint: '定期代・出張交通費・タクシー代も計上可能' },
+      communication: { name: '通信費', hint: '携帯代・インターネット代の按分が可能' },
+      supplies: { name: '消耗品費', hint: '10万円未満のPC・周辺機器は即時経費計上可能' },
+      advertising: { name: '広告宣伝費', hint: 'Web広告・名刺・チラシなど' },
+      entertainment: { name: '接待交際費', hint: '取引先との会食・贈答品' },
+      outsourcing: { name: '外注工賃', hint: '業務委託・外注費用' },
+      fees: { name: '支払手数料', hint: '振込手数料・クラウドサービス利用料' },
+      home_office: { name: '家事按分', hint: '自宅の家賃・光熱費を事業使用割合で計上' },
+      depreciation: { name: '減価償却費', hint: '10万円以上の資産は耐用年数に応じて分割計上' },
+      medical: { name: '医療費', hint: '年間10万円超で医療費控除の対象' },
+      insurance: { name: '保険料', hint: '社会保険料・国民健康保険は全額控除対象' }
+    };
+
+    if (taxableIncome > 0) {
+      // 未使用カテゴリの提案
+      const usedCategories = new Set(expenseCategories.map(c => c.category));
+      const suggestions = [];
+      for (const [catId, catInfo] of Object.entries(CATEGORY_TIPS)) {
+        if (!usedCategories.has(catId)) {
+          const estimatedAmount = catId === 'home_office' ? 300000 : catId === 'communication' ? 120000 : 50000;
+          const saving = Math.floor(estimatedAmount * effectiveRate);
+          if (saving > 0) {
+            suggestions.push({
+              type: 'new_category', category: catId, label: catInfo.name, hint: catInfo.hint,
+              estimatedExpense: estimatedAmount, saving, effectiveRatePercent: Math.round(effectiveRate * 1000) / 10
+            });
+          }
+        }
+      }
+      suggestions.sort((a, b) => b.saving - a.saving);
+      tips.push(...suggestions.slice(0, 5));
+
+      // 既存カテゴリの増額提案（金額の少ないカテゴリ）
+      for (const ec of expenseCategories) {
+        if (ec.total < 100000 && CATEGORY_TIPS[ec.category]) {
+          const addAmount = 100000;
+          const saving = Math.floor(addAmount * effectiveRate);
+          if (saving > 0) {
+            tips.push({
+              type: 'increase', category: ec.category, label: CATEGORY_TIPS[ec.category].name,
+              hint: CATEGORY_TIPS[ec.category].hint, currentAmount: ec.total,
+              additionalExpense: addAmount, saving, effectiveRatePercent: Math.round(effectiveRate * 1000) / 10
+            });
+          }
+        }
+      }
+      tips.sort((a, b) => b.saving - a.saving);
     }
 
     // 次の税率帯までの距離
@@ -1025,21 +1101,41 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
     for (let i = INCOME_TAX_BRACKETS.length - 1; i >= 0; i--) {
       if (taxableIncome > INCOME_TAX_BRACKETS[i].limit) {
         const overAmount = taxableIncome - INCOME_TAX_BRACKETS[i].limit;
-        nextBracketInfo = { currentRate: INCOME_TAX_BRACKETS[i + 1]?.rate || currentBracket.rate, lowerRate: INCOME_TAX_BRACKETS[i].rate, expenseNeeded: overAmount };
+        nextBracketInfo = {
+          currentRate: INCOME_TAX_BRACKETS[i + 1]?.rate || currentBracket.rate,
+          currentRatePercent: Math.round((INCOME_TAX_BRACKETS[i + 1]?.rate || currentBracket.rate) * 100),
+          lowerRate: INCOME_TAX_BRACKETS[i].rate,
+          lowerRatePercent: Math.round(INCOME_TAX_BRACKETS[i].rate * 100),
+          expenseNeeded: overAmount,
+          totalSaving: Math.floor(overAmount * (currentBracket.rate - INCOME_TAX_BRACKETS[i].rate + 0.10 * (overAmount > 0 ? 0 : 0)))
+        };
         break;
       }
     }
 
+    // 全税率帯の一覧（現在位置マーク付き）
+    const bracketMap = INCOME_TAX_BRACKETS.map((b, i) => ({
+      min: i === 0 ? 0 : INCOME_TAX_BRACKETS[i - 1].limit + 1,
+      max: b.limit === Infinity ? null : b.limit,
+      rate: b.rate,
+      ratePercent: Math.round(b.rate * 100),
+      isCurrent: taxableIncome <= b.limit && (i === 0 || taxableIncome > INCOME_TAX_BRACKETS[i - 1].limit)
+    }));
+
     res.json({
       year,
       incomeByType: incomeByType.map(r => ({ ...r, label: INCOME_TYPE_LABELS[r.income_type] || r.income_type })),
-      totalIncome, totalExpenses, totalDepreciation, totalDeductions,
+      taxByIncomeType,
+      comprehensiveTaxDetail,
+      totalIncome, comprehensiveIncome, separateIncome,
+      totalExpenses, totalDepreciation, totalDeductions,
       depreciationDetails: depDetails,
       deductions: deductionList.map(d => ({ ...d, label: DEDUCTION_LABELS[d.type] || d.name || d.type })),
       netBusinessIncome, taxableIncome,
+      expenseTaxImpact,
       tax: { incomeTax, reconstructionTax, residentTax, separateTax, totalTax },
       currentBracket: { rate: currentBracket.rate, ratePercent: Math.round(currentBracket.rate * 100) },
-      tips, nextBracketInfo,
+      tips, nextBracketInfo, bracketMap,
       labels: { incomeTypes: INCOME_TYPE_LABELS, deductionTypes: DEDUCTION_LABELS }
     });
   } catch (err) { logError(err.message, '/api/tax-simulation', req.userId, err.stack); res.status(500).json({ error: err.message }); }

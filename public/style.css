@@ -254,26 +254,65 @@ body { min-height: 100dvh; }
 .tf-eq { height: 1px; background: var(--border); margin: 2px 0; }
 .tf-eq.thick { height: 2px; background: var(--text); margin: 4px 0; }
 
+/* 税額ヒーローサブ */
+.tax-hero-sub { font-size: 12px; color: rgba(255,255,255,.7); margin-top: 4px; }
+
+/* 収入区分別課税方式 */
+.tbt-item { padding: 12px; margin-bottom: 8px; background: var(--bg); border-radius: var(--radius-sm); border-left: 3px solid var(--pri); }
+.tbt-item.separate { border-left-color: #f59e0b; }
+.tbt-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.tbt-label { font-size: 14px; font-weight: 600; }
+.tbt-amount { font-size: 15px; font-weight: 700; color: var(--green); }
+.tbt-meta { display: flex; gap: 8px; flex-wrap: wrap; }
+.tbt-badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 8px; font-weight: 500; }
+.tbt-badge.comprehensive { background: #ede9fe; color: #5b21b6; }
+.tbt-badge.separate { background: #fef3c7; color: #92400e; }
+.tbt-rate { font-size: 12px; color: var(--text2); }
+.tbt-tax { font-size: 13px; font-weight: 600; color: var(--red); margin-top: 4px; }
+
 /* 税額内訳 */
-.tax-bd-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 13px; border-bottom: 1px solid var(--border); }
+.tax-bd-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; font-size: 13px; border-bottom: 1px solid var(--border); }
 .tax-bd-row:last-child { border-bottom: none; }
-.tax-bd-row.total { font-weight: 700; font-size: 14px; border-top: 2px solid var(--text); padding-top: 10px; }
-.tax-bd-label { color: var(--text2); }
-.tax-bd-val { font-weight: 600; }
+.tax-bd-row.total { font-weight: 700; font-size: 15px; border-top: 2px solid var(--text); padding-top: 12px; margin-top: 4px; }
+.tax-bd-left { display: flex; flex-direction: column; gap: 2px; }
+.tax-bd-label { color: var(--text); font-weight: 500; }
+.tax-bd-rate { font-size: 11px; color: var(--text3); }
+.tax-bd-val { font-weight: 700; text-align: right; }
+
+/* 税率テーブル */
+.bracket-row { display: flex; align-items: center; padding: 8px 10px; margin-bottom: 4px; border-radius: var(--radius-sm); font-size: 13px; transition: background .15s; }
+.bracket-row.current { background: #ede9fe; font-weight: 600; }
+.bracket-range { flex: 1; min-width: 0; }
+.bracket-rate { font-weight: 700; color: var(--pri); min-width: 42px; text-align: right; }
+.bracket-marker { width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; flex-shrink: 0; }
+.bracket-marker.active { background: var(--pri); box-shadow: 0 0 0 3px rgba(99,102,241,.2); }
+.bracket-marker.inactive { background: var(--border); }
+
+/* 経費節税効果 */
+.ei-item { display: flex; align-items: center; gap: 10px; padding: 10px 8px; border-bottom: 1px solid var(--border); }
+.ei-item:last-child { border-bottom: none; }
+.ei-icon { font-size: 20px; flex-shrink: 0; }
+.ei-body { flex: 1; min-width: 0; }
+.ei-name { font-size: 13px; font-weight: 600; }
+.ei-detail { font-size: 11px; color: var(--text3); margin-top: 1px; }
+.ei-saving { text-align: right; flex-shrink: 0; }
+.ei-saving-val { font-size: 14px; font-weight: 700; color: var(--green); }
+.ei-saving-rate { font-size: 11px; color: var(--text3); }
 
 /* 節税ヒント */
 .tax-tip {
-  display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin-bottom: 8px;
-  background: var(--bg); border-radius: var(--radius-sm); border-left: 3px solid var(--green);
+  padding: 12px; margin-bottom: 8px; background: var(--bg); border-radius: var(--radius-sm);
+  border-left: 3px solid var(--green);
 }
 .tax-tip:last-child { margin-bottom: 0; }
-.tax-tip-expense { font-size: 13px; font-weight: 600; min-width: 70px; }
-.tax-tip-arrow { color: var(--text3); flex-shrink: 0; }
-.tax-tip-saving { font-size: 13px; font-weight: 700; color: var(--green); }
-.tax-tip-desc { font-size: 11px; color: var(--text3); }
+.tax-tip-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.tax-tip-category { font-size: 13px; font-weight: 600; }
+.tax-tip-saving { font-size: 14px; font-weight: 700; color: var(--green); }
+.tax-tip-desc { font-size: 12px; color: var(--text2); line-height: 1.5; }
+.tax-tip-rate { font-size: 11px; color: var(--text3); margin-top: 3px; }
 .tax-bracket-hint {
   padding: 12px; margin-top: 10px; background: #fffbeb; border: 1px solid #fde68a;
-  border-radius: var(--radius-sm); font-size: 12px; color: #92400e; line-height: 1.6;
+  border-radius: var(--radius-sm); font-size: 13px; color: #92400e; line-height: 1.6;
 }
 
 /* 控除・減価償却リスト */

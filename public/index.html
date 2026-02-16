@@ -130,28 +130,50 @@
         <div class="tax-hero" id="tax-hero">
           <div class="tax-hero-label">あなたの税金（推定）</div>
           <div class="tax-hero-val" id="tax-total">¥0</div>
-          <div class="tax-hero-rate">所得税率 <span id="tax-rate">5</span>%</div>
+          <div class="tax-hero-sub" id="tax-hero-sub"></div>
         </div>
 
-        <!-- 所得の内訳 -->
-        <div class="tax-flow">
-          <div class="tf-row tf-tappable" id="tf-income-row"><span>総収入</span><span class="tf-val income" id="rpt-income">¥0</span><span class="tf-arrow">›</span></div>
-          <div class="tf-op">−</div>
-          <div class="tf-row tf-tappable" id="tf-expense-row"><span>経費</span><span class="tf-val expense" id="rpt-expense">¥0</span><span class="tf-arrow">›</span></div>
-          <div class="tf-op">−</div>
-          <div class="tf-row"><span>減価償却</span><span class="tf-val" id="rpt-depreciation">¥0</span></div>
-          <div class="tf-eq"></div>
-          <div class="tf-row bold"><span>所得</span><span class="tf-val" id="rpt-net-income">¥0</span></div>
-          <div class="tf-op">−</div>
-          <div class="tf-row"><span>控除合計</span><span class="tf-val" id="rpt-deductions">¥0</span></div>
-          <div class="tf-eq thick"></div>
-          <div class="tf-row bold"><span>課税所得</span><span class="tf-val primary" id="rpt-taxable">¥0</span></div>
+        <!-- 収入区分別の課税方式 -->
+        <div class="card" id="tax-by-type-card">
+          <h3 class="card-title">📊 収入区分と課税方式</h3>
+          <div id="tax-by-type"></div>
+        </div>
+
+        <!-- 総合課税の計算フロー -->
+        <div class="card">
+          <h3 class="card-title">📝 総合課税の計算</h3>
+          <div class="tax-flow">
+            <div class="tf-row tf-tappable" id="tf-income-row"><span>総合課税の収入</span><span class="tf-val income" id="rpt-income">¥0</span><span class="tf-arrow">›</span></div>
+            <div class="tf-op">−</div>
+            <div class="tf-row tf-tappable" id="tf-expense-row"><span>経費合計</span><span class="tf-val expense" id="rpt-expense">¥0</span><span class="tf-arrow">›</span></div>
+            <div class="tf-op">−</div>
+            <div class="tf-row"><span>減価償却費</span><span class="tf-val" id="rpt-depreciation">¥0</span></div>
+            <div class="tf-eq"></div>
+            <div class="tf-row bold"><span>事業所得</span><span class="tf-val" id="rpt-net-income">¥0</span></div>
+            <div class="tf-op">−</div>
+            <div class="tf-row"><span>控除合計</span><span class="tf-val" id="rpt-deductions">¥0</span></div>
+            <div class="tf-eq thick"></div>
+            <div class="tf-row bold"><span>課税所得</span><span class="tf-val primary" id="rpt-taxable">¥0</span></div>
+          </div>
         </div>
 
         <!-- 税額の内訳 -->
         <div class="card">
-          <h3 class="card-title">税額の内訳</h3>
+          <h3 class="card-title">💰 税額の内訳</h3>
           <div id="tax-breakdown"></div>
+        </div>
+
+        <!-- 税率テーブル -->
+        <div class="card" id="bracket-card">
+          <h3 class="card-title">📋 所得税率テーブル</h3>
+          <div id="bracket-table"></div>
+        </div>
+
+        <!-- 経費の節税効果 -->
+        <div class="card" id="expense-impact-card" style="display:none">
+          <h3 class="card-title">🧮 経費の節税効果</h3>
+          <p class="card-desc" id="expense-impact-desc"></p>
+          <div id="expense-impact"></div>
         </div>
 
         <!-- 節税ヒント -->

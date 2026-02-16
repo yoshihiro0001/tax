@@ -793,37 +793,106 @@ const App = {
 
       // ヒーロー
       qs('#tax-total').textContent = `¥${t.tax.totalTax.toLocaleString()}`;
-      qs('#tax-rate').textContent = t.currentBracket.ratePercent;
+      const heroSub = [];
+      if (t.comprehensiveTaxDetail.totalComprehensiveTax > 0) heroSub.push(`総合課税 ¥${t.comprehensiveTaxDetail.totalComprehensiveTax.toLocaleString()}`);
+      if (t.tax.separateTax > 0) heroSub.push(`分離課税 ¥${t.tax.separateTax.toLocaleString()}`);
+      qs('#tax-hero-sub').textContent = heroSub.join(' ＋ ');
 
-      // フロー
-      qs('#rpt-income').textContent = `¥${t.totalIncome.toLocaleString()}`;
+      // 収入区分と課税方式
+      const tbtWrap = qs('#tax-by-type');
+      if (t.taxByIncomeType && t.taxByIncomeType.length > 0) {
+        qs('#tax-by-type-card').style.display = '';
+        tbtWrap.innerHTML = t.taxByIncomeType.map(item => {
+          const isSep = item.method === '申告分離課税';
+          return `<div class="tbt-item ${isSep ? 'separate' : ''}">
+            <div class="tbt-head">
+              <span class="tbt-label">${this.incomeTypeIcon(item.income_type)} ${item.label}</span>
+              <span class="tbt-amount">¥${item.amount.toLocaleString()}</span>
+            </div>
+            <div class="tbt-meta">
+              <span class="tbt-badge ${isSep ? 'separate' : 'comprehensive'}">${item.method}</span>
+              <span class="tbt-rate">${item.taxRateLabel}</span>
+            </div>
+            ${isSep ? `<div class="tbt-tax">→ 税額: ¥${item.taxAmount.toLocaleString()} (${item.taxRate}%)</div>` : ''}
+          </div>`;
+        }).join('');
+      } else {
+        qs('#tax-by-type-card').style.display = 'none';
+      }
+
+      // 総合課税の計算フロー
+      qs('#rpt-income').textContent = `¥${(t.comprehensiveIncome || 0).toLocaleString()}`;
       qs('#rpt-expense').textContent = `¥${t.totalExpenses.toLocaleString()}`;
       qs('#rpt-depreciation').textContent = `¥${t.totalDepreciation.toLocaleString()}`;
       qs('#rpt-net-income').textContent = `¥${t.netBusinessIncome.toLocaleString()}`;
       qs('#rpt-deductions').textContent = `¥${t.totalDeductions.toLocaleString()}`;
       qs('#rpt-taxable').textContent = `¥${t.taxableIncome.toLocaleString()}`;
 
-      // 税額内訳
-      qs('#tax-breakdown').innerHTML = `
-        <div class="tax-bd-row"><span class="tax-bd-label">所得税</span><span class="tax-bd-val">¥${t.tax.incomeTax.toLocaleString()}</span></div>
-        <div class="tax-bd-row"><span class="tax-bd-label">復興特別所得税</span><span class="tax-bd-val">¥${t.tax.reconstructionTax.toLocaleString()}</span></div>
-        <div class="tax-bd-row"><span class="tax-bd-label">住民税</span><span class="tax-bd-val">¥${t.tax.residentTax.toLocaleString()}</span></div>
-        ${t.tax.separateTax > 0 ? `<div class="tax-bd-row"><span class="tax-bd-label">分離課税（株・FX）</span><span class="tax-bd-val">¥${t.tax.separateTax.toLocaleString()}</span></div>` : ''}
-        <div class="tax-bd-row total"><span>合計</span><span class="tax-bd-val">¥${t.tax.totalTax.toLocaleString()}</span></div>
-      `;
+      // 税額内訳（詳細）
+      let bdHtml = '';
+      bdHtml += `<div class="tax-bd-row"><div class="tax-bd-left"><span class="tax-bd-label">所得税</span><span class="tax-bd-rate">課税所得 ¥${t.taxableIncome.toLocaleString()} × ${t.currentBracket.ratePercent}%</span></div><span class="tax-bd-val">¥${t.tax.incomeTax.toLocaleString()}</span></div>`;
+      bdHtml += `<div class="tax-bd-row"><div class="tax-bd-left"><span class="tax-bd-label">復興特別所得税</span><span class="tax-bd-rate">所得税 × 2.1%</span></div><span class="tax-bd-val">¥${t.tax.reconstructionTax.toLocaleString()}</span></div>`;
+      bdHtml += `<div class="tax-bd-row"><div class="tax-bd-left"><span class="tax-bd-label">住民税</span><span class="tax-bd-rate">課税所得 × 10%</span></div><span class="tax-bd-val">¥${t.tax.residentTax.toLocaleString()}</span></div>`;
+      if (t.tax.separateTax > 0) {
+        bdHtml += `<div class="tax-bd-row"><div class="tax-bd-left"><span class="tax-bd-label">分離課税（株・FX）</span><span class="tax-bd-rate">利益 ¥${(t.separateIncome || 0).toLocaleString()} × 20.315%</span></div><span class="tax-bd-val">¥${t.tax.separateTax.toLocaleString()}</span></div>`;
+      }
+      bdHtml += `<div class="tax-bd-row total"><span>合計</span><span class="tax-bd-val">¥${t.tax.totalTax.toLocaleString()}</span></div>`;
+      qs('#tax-breakdown').innerHTML = bdHtml;
 
-      // 節税ヒント
+      // 税率テーブル
+      if (t.bracketMap) {
+        qs('#bracket-table').innerHTML = t.bracketMap.map(b => `
+          <div class="bracket-row ${b.isCurrent ? 'current' : ''}">
+            <span class="bracket-marker ${b.isCurrent ? 'active' : 'inactive'}"></span>
+            <span class="bracket-range">${b.max ? `〜${(b.max / 10000).toLocaleString()}万円` : `${((b.min - 1) / 10000).toLocaleString()}万円超`}</span>
+            <span class="bracket-rate">${b.ratePercent}%</span>
+          </div>
+        `).join('');
+      }
+
+      // 経費の節税効果
+      if (t.expenseTaxImpact && t.expenseTaxImpact.length > 0) {
+        qs('#expense-impact-card').style.display = '';
+        qs('#expense-impact-desc').textContent = `現在の実効税率は約${t.expenseTaxImpact[0].effectiveRate}%。経費1万円ごとに約¥${Math.floor(t.expenseTaxImpact[0].effectiveRate * 100)}の節税になります。`;
+        qs('#expense-impact').innerHTML = t.expenseTaxImpact.map(e => `
+          <div class="ei-item">
+            <span class="ei-icon">${this.categoryIcon(e.category)}</span>
+            <div class="ei-body">
+              <div class="ei-name">${this.categoryName(e.category)}</div>
+              <div class="ei-detail">経費 ¥${e.total.toLocaleString()} (${e.count}件)</div>
+            </div>
+            <div class="ei-saving">
+              <div class="ei-saving-val">-¥${e.taxSaving.toLocaleString()}</div>
+              <div class="ei-saving-rate">節税額</div>
+            </div>
+          </div>
+        `).join('');
+      } else {
+        qs('#expense-impact-card').style.display = 'none';
+      }
+
+      // 節税ヒント（カテゴリ別・金額順）
       if (t.tips.length > 0 || t.nextBracketInfo) {
         qs('#tax-tips-card').style.display = '';
-        let tipsHtml = t.tips.map(tip => `
-          <div class="tax-tip">
-            <span class="tax-tip-expense">あと¥${tip.extraExpense.toLocaleString()}</span>
-            <span class="tax-tip-arrow">→</span>
-            <span class="tax-tip-saving">¥${tip.saving.toLocaleString()} 節税</span>
-          </div>`).join('');
+        let tipsHtml = '';
         if (t.nextBracketInfo) {
-          tipsHtml += `<div class="tax-bracket-hint">あと <strong>¥${t.nextBracketInfo.expenseNeeded.toLocaleString()}</strong> の経費で税率が <strong>${Math.round(t.nextBracketInfo.currentRate * 100)}%</strong> → <strong>${Math.round(t.nextBracketInfo.lowerRate * 100)}%</strong> に下がります</div>`;
+          tipsHtml += `<div class="tax-bracket-hint">💎 あと <strong>¥${t.nextBracketInfo.expenseNeeded.toLocaleString()}</strong> の経費で所得税率が <strong>${t.nextBracketInfo.currentRatePercent}%</strong> → <strong>${t.nextBracketInfo.lowerRatePercent}%</strong> に下がります</div>`;
         }
+        tipsHtml += t.tips.map(tip => {
+          if (tip.type === 'new_category') {
+            return `<div class="tax-tip">
+              <div class="tax-tip-head"><span class="tax-tip-category">${this.categoryIcon(tip.category)} ${tip.label}</span><span class="tax-tip-saving">-¥${tip.saving.toLocaleString()}</span></div>
+              <div class="tax-tip-desc">${tip.hint}</div>
+              <div class="tax-tip-rate">例: ¥${tip.estimatedExpense.toLocaleString()}の経費 → 実効税率${tip.effectiveRatePercent}%で節税</div>
+            </div>`;
+          } else {
+            return `<div class="tax-tip">
+              <div class="tax-tip-head"><span class="tax-tip-category">${this.categoryIcon(tip.category)} ${tip.label}</span><span class="tax-tip-saving">-¥${tip.saving.toLocaleString()}</span></div>
+              <div class="tax-tip-desc">現在 ¥${tip.currentAmount.toLocaleString()} → ${tip.hint}</div>
+              <div class="tax-tip-rate">+¥${tip.additionalExpense.toLocaleString()}追加で実効税率${tip.effectiveRatePercent}%分の節税</div>
+            </div>`;
+          }
+        }).join('');
         qs('#tax-tips').innerHTML = tipsHtml;
       } else {
         qs('#tax-tips-card').style.display = 'none';
