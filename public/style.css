@@ -322,6 +322,38 @@ body { min-height: 100dvh; }
 .ov-storage-val { font-size: 16px; font-weight: 800; display: block; color: var(--text); }
 .ov-storage-label { font-size: 11px; color: var(--text3); }
 
+/* 管理者エリア区切り */
+.admin-divider {
+  display: flex; align-items: center; gap: 12px; margin: 24px 0 16px;
+  color: var(--pri); font-size: 13px; font-weight: 700;
+}
+.admin-divider::before, .admin-divider::after {
+  content: ''; flex: 1; height: 2px; background: linear-gradient(90deg, var(--pri-bg), var(--pri), var(--pri-bg));
+}
+
+/* 管理者ユーザーリスト */
+.admin-user-item {
+  display: flex; align-items: center; gap: 10px; padding: 12px 0;
+  border-bottom: 1px solid var(--border); font-size: 13px;
+}
+.admin-user-item:last-child { border-bottom: none; }
+.admin-user-avatar {
+  width: 32px; height: 32px; border-radius: 999px; background: var(--pri-bg); color: var(--pri);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px;
+  flex-shrink: 0; overflow: hidden;
+}
+.admin-user-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.admin-user-info { flex: 1; min-width: 0; }
+.admin-user-name { font-weight: 600; }
+.admin-user-email { font-size: 11px; color: var(--text3); }
+.admin-user-meta { text-align: right; }
+.admin-user-role {
+  display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 600;
+}
+.admin-user-role.admin { background: var(--pri-bg); color: var(--pri); }
+.admin-user-role.user { background: var(--bg); color: var(--text3); }
+.admin-user-date { font-size: 10px; color: var(--text3); margin-top: 2px; }
+
 /* データの仕組みフロー */
 .how-flow {
   display: flex; align-items: center; justify-content: center; gap: 4px;

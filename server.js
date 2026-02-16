@@ -14,10 +14,14 @@ const PORT = process.env.PORT || 3001;
 
 // === 設定読み込み ===
 let GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+let ADMIN_EMAILS = [];
 try {
   const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf-8'));
   if (cfg.GOOGLE_CLIENT_ID) GOOGLE_CLIENT_ID = cfg.GOOGLE_CLIENT_ID;
+  if (cfg.ADMIN_EMAILS) ADMIN_EMAILS = cfg.ADMIN_EMAILS;
 } catch (e) { /* config.json 未作成時は無視 */ }
+
+function isAdminEmail(email) { return ADMIN_EMAILS.includes(email); }
 
 // ディレクトリ作成
 ['data', 'data/backups', 'uploads'].forEach(dir => {
@@ -45,6 +49,9 @@ try {
   }
 } catch (e) { /* テーブルが存在しない場合は無視 */ }
 
+// 3) 既存テーブルに role カラムがなければ追加
+try { db.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'"); } catch (e) { /* 既にある */ }
+
 // === テーブル作成 ===
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
@@ -54,6 +61,7 @@ db.exec(`
     password_hash TEXT,
     avatar_url TEXT,
     auth_provider TEXT DEFAULT 'local',
+    role TEXT DEFAULT 'user',
     created_at TEXT DEFAULT (datetime('now','localtime'))
   );
   CREATE TABLE IF NOT EXISTS sessions (
@@ -190,7 +198,8 @@ router.post('/api/auth/register', async (req, res) => {
     if (exists) return res.status(400).json({ error: 'このメールアドレスは登録済みです' });
 
     const hash = await bcrypt.hash(password, 10);
-    const result = db.prepare('INSERT INTO users (email, name, password_hash) VALUES (?, ?, ?)').run(email, name, hash);
+    const role = isAdminEmail(email) ? 'admin' : 'user';
+    const result = db.prepare('INSERT INTO users (email, name, password_hash, role) VALUES (?, ?, ?, ?)').run(email, name, hash, role);
     const userId = result.lastInsertRowid;
 
     // デフォルト帳簿を作成
@@ -275,13 +284,16 @@ router.post('/api/auth/google', async (req, res) => {
     // 既存ユーザーを検索、なければ作成
     let user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
     if (!user) {
-      const r = db.prepare('INSERT INTO users (email, name, avatar_url, auth_provider) VALUES (?,?,?,?)').run(email, name, avatarUrl, 'google');
+      const role = isAdminEmail(email) ? 'admin' : 'user';
+      const r = db.prepare('INSERT INTO users (email, name, avatar_url, auth_provider, role) VALUES (?,?,?,?,?)').run(email, name, avatarUrl, 'google', role);
       const userId = r.lastInsertRowid;
       db.prepare('INSERT INTO books (user_id, name, emoji) VALUES (?, ?, ?)').run(userId, '個人', '👤');
       user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
     } else {
-      // アバター更新
-      if (avatarUrl) db.prepare('UPDATE users SET avatar_url=? WHERE id=?').run(avatarUrl, user.id);
+      // アバター・role更新
+      const role = isAdminEmail(email) ? 'admin' : user.role;
+      db.prepare('UPDATE users SET avatar_url=COALESCE(?,avatar_url), role=? WHERE id=?').run(avatarUrl, role, user.id);
+      user.role = role;
     }
 
     const token = crypto.randomUUID();
@@ -302,7 +314,7 @@ router.get('/api/config', (req, res) => {
 });
 
 router.get('/api/auth/me', auth, (req, res) => {
-  const user = db.prepare('SELECT id, email, name, avatar_url, auth_provider FROM users WHERE id = ?').get(req.userId);
+  const user = db.prepare('SELECT id, email, name, avatar_url, auth_provider, role FROM users WHERE id = ?').get(req.userId);
   const books = db.prepare('SELECT * FROM books WHERE user_id = ? ORDER BY created_at').all(req.userId);
   res.json({ user, books });
 });
@@ -560,12 +572,21 @@ router.get('/api/export', auth, (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// 管理者ミドルウェア
+function adminOnly(req, res, next) {
+  const user = db.prepare('SELECT role FROM users WHERE id = ?').get(req.userId);
+  if (!user || user.role !== 'admin') return res.status(403).json({ error: '管理者権限が必要です' });
+  next();
+}
+
 // ========================================
-// データ概要 API (管理者向け見える化)
+// 管理者 API
 // ========================================
-router.get('/api/admin/overview', auth, (req, res) => {
+router.get('/api/admin/overview', auth, adminOnly, (req, res) => {
   try {
-    const userBooks = db.prepare('SELECT * FROM books WHERE user_id = ? ORDER BY created_at').all(req.userId);
+    // 全ユーザーの全帳簿を取得
+    const allUsers = db.prepare("SELECT id, email, name, avatar_url, auth_provider, role, created_at FROM users ORDER BY created_at").all();
+    const userBooks = db.prepare('SELECT * FROM books ORDER BY created_at').all();
     const booksData = userBooks.map(b => {
       const ic = db.prepare('SELECT COUNT(*) as c, COALESCE(SUM(amount),0) as t FROM income WHERE book_id=?').get(b.id);
       const ec = db.prepare('SELECT COUNT(*) as c, COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=?').get(b.id);
@@ -601,10 +622,25 @@ router.get('/api/admin/overview', auth, (req, res) => {
     } catch {}
 
     res.json({
+      users: allUsers,
       books: booksData,
       storage: { dbSizeKB, receiptFiles, receiptSizeKB, backups },
       system: { dbPath: 'data/database.sqlite', uploadsPath: 'uploads/', backupPath: 'data/backups/' }
     });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ユーザー用の自分のデータ概要
+router.get('/api/my/overview', auth, (req, res) => {
+  try {
+    const myBooks = db.prepare('SELECT * FROM books WHERE user_id = ? ORDER BY created_at').all(req.userId);
+    const booksData = myBooks.map(b => {
+      const ic = db.prepare('SELECT COUNT(*) as c, COALESCE(SUM(amount),0) as t FROM income WHERE book_id=?').get(b.id);
+      const ec = db.prepare('SELECT COUNT(*) as c, COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=?').get(b.id);
+      const rc = db.prepare("SELECT COUNT(*) as c FROM expenses WHERE book_id=? AND receipt_path IS NOT NULL AND receipt_path != ''").get(b.id);
+      return { id: b.id, name: b.name, emoji: b.emoji, incomeCount: ic.c, incomeTotal: ic.t, expenseCount: ec.c, expenseTotal: ec.t, receiptCount: rc.c };
+    });
+    res.json({ books: booksData });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

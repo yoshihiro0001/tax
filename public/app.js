@@ -597,70 +597,125 @@ const App = {
   // ========================================
   // データ概要（見える化）
   // ========================================
+  isAdmin() { return this.user?.role === 'admin'; },
+
   async loadOverview() {
-    qs('#overview-loading').style.display = 'flex';
-    qs('#overview-content').style.display = 'none';
+    // 管理者: admin-area表示 + admin API
+    // 一般: user-overview のみ
+    const adminArea = qs('#admin-area');
+    adminArea.style.display = this.isAdmin() ? '' : 'none';
+
+    // ユーザー用の自分のデータ概要（全員に表示）
+    this.loadUserOverview();
+
+    // 管理者の場合のみ管理者データを読み込み
+    if (this.isAdmin()) this.loadAdminOverview();
+  },
+
+  async loadUserOverview() {
+    qs('#user-overview-loading').style.display = 'flex';
+    qs('#user-overview-content').style.display = 'none';
     try {
-      const d = await this.api('/api/admin/overview');
-      this.renderOverview(d);
-    } catch (err) {
-      qs('#overview-loading').innerHTML = `<span style="color:var(--text3);font-size:13px">データ取得に失敗</span>`;
+      const d = await this.api('/api/my/overview');
+      qs('#user-overview-loading').style.display = 'none';
+      qs('#user-overview-content').style.display = '';
+      qs('#user-overview-content').innerHTML = d.books.map((b, idx) => {
+        const total = b.incomeCount + b.expenseCount;
+        return `
+          <div class="ov-book" style="animation-delay:${idx*0.06}s">
+            <div class="ov-book-head">
+              <span class="ov-book-emoji">${b.emoji}</span>
+              <span class="ov-book-name">${this.esc(b.name)}</span>
+              <span class="ov-book-badge">${total}件</span>
+            </div>
+            <div class="ov-stats">
+              <div class="ov-stat"><span class="ov-stat-val income">¥${b.incomeTotal.toLocaleString()}</span><span class="ov-stat-label">収入 (${b.incomeCount}件)</span></div>
+              <div class="ov-stat"><span class="ov-stat-val expense">¥${b.expenseTotal.toLocaleString()}</span><span class="ov-stat-label">経費 (${b.expenseCount}件)</span></div>
+              <div class="ov-stat"><span class="ov-stat-val neutral">${b.receiptCount}</span><span class="ov-stat-label">レシート</span></div>
+            </div>
+          </div>`;
+      }).join('') || '<p class="empty-msg">まだデータがありません</p>';
+    } catch {
+      qs('#user-overview-loading').innerHTML = '<span style="color:var(--text3);font-size:13px">取得失敗</span>';
     }
   },
 
-  renderOverview(d) {
-    qs('#overview-loading').style.display = 'none';
-    qs('#overview-content').style.display = '';
+  async loadAdminOverview() {
+    qs('#admin-overview-loading').style.display = 'flex';
+    qs('#admin-overview-content').style.display = 'none';
+    try {
+      const d = await this.api('/api/admin/overview');
+      qs('#admin-overview-loading').style.display = 'none';
+      qs('#admin-overview-content').style.display = '';
 
-    // 帳簿ごとのデータ
-    const booksHtml = d.books.map((b, idx) => {
-      const total = b.incomeCount + b.expenseCount;
-      const maxCat = b.categories.length ? b.categories[0].total : 1;
-      const catsHtml = b.categories.slice(0, 5).map(c => `
-        <div class="ov-cat-row">
-          <span class="ov-cat-name">${this.categoryIcon(c.category)} ${this.categoryName(c.category)}</span>
-          <div class="ov-cat-bar"><div class="ov-cat-fill" style="width:${(c.total/maxCat*100).toFixed(0)}%"></div></div>
-          <span class="ov-cat-val">¥${c.total.toLocaleString()}</span>
-        </div>
-      `).join('');
+      // ユーザー一覧
+      qs('#admin-users').innerHTML = d.users.map(u => {
+        const avatar = u.avatar_url
+          ? `<img src="${u.avatar_url}" alt="">`
+          : u.name.charAt(0).toUpperCase();
+        const roleClass = u.role === 'admin' ? 'admin' : 'user';
+        const roleLabel = u.role === 'admin' ? '管理者' : 'ユーザー';
+        const dateStr = u.created_at ? u.created_at.slice(0, 10) : '';
+        return `
+          <div class="admin-user-item">
+            <div class="admin-user-avatar">${avatar}</div>
+            <div class="admin-user-info">
+              <div class="admin-user-name">${this.esc(u.name)}</div>
+              <div class="admin-user-email">${this.esc(u.email)}</div>
+            </div>
+            <div class="admin-user-meta">
+              <span class="admin-user-role ${roleClass}">${roleLabel}</span>
+              <div class="admin-user-date">${dateStr}</div>
+            </div>
+          </div>`;
+      }).join('');
 
-      const dateStr = b.dateRange.oldest && b.dateRange.newest
-        ? `${b.dateRange.oldest} 〜 ${b.dateRange.newest}`
-        : 'データなし';
+      // 全帳簿データ
+      const booksHtml = d.books.map((b, idx) => {
+        const total = b.incomeCount + b.expenseCount;
+        const maxCat = b.categories.length ? b.categories[0].total : 1;
+        const catsHtml = b.categories.slice(0, 5).map(c => `
+          <div class="ov-cat-row">
+            <span class="ov-cat-name">${this.categoryIcon(c.category)} ${this.categoryName(c.category)}</span>
+            <div class="ov-cat-bar"><div class="ov-cat-fill" style="width:${(c.total/maxCat*100).toFixed(0)}%"></div></div>
+            <span class="ov-cat-val">¥${c.total.toLocaleString()}</span>
+          </div>`).join('');
+        const dateStr = b.dateRange?.oldest && b.dateRange?.newest
+          ? `${b.dateRange.oldest} 〜 ${b.dateRange.newest}` : 'データなし';
+        return `
+          <div class="ov-book" style="animation-delay:${idx*0.06}s">
+            <div class="ov-book-head">
+              <span class="ov-book-emoji">${b.emoji}</span>
+              <span class="ov-book-name">${this.esc(b.name)}</span>
+              <span class="ov-book-badge">${total}件</span>
+            </div>
+            <div class="ov-stats">
+              <div class="ov-stat"><span class="ov-stat-val income">¥${b.incomeTotal.toLocaleString()}</span><span class="ov-stat-label">収入 (${b.incomeCount}件)</span></div>
+              <div class="ov-stat"><span class="ov-stat-val expense">¥${b.expenseTotal.toLocaleString()}</span><span class="ov-stat-label">経費 (${b.expenseCount}件)</span></div>
+              <div class="ov-stat"><span class="ov-stat-val neutral">${b.receiptCount}</span><span class="ov-stat-label">レシート</span></div>
+            </div>
+            ${catsHtml ? `<div class="ov-cats">${catsHtml}</div>` : ''}
+            <div class="ov-date-range">${dateStr}</div>
+          </div>`;
+      }).join('');
+      qs('#admin-overview-books').innerHTML = booksHtml;
 
-      return `
-        <div class="ov-book" style="animation-delay:${idx*0.06}s">
-          <div class="ov-book-head">
-            <span class="ov-book-emoji">${b.emoji}</span>
-            <span class="ov-book-name">${this.esc(b.name)}</span>
-            <span class="ov-book-badge">${total}件</span>
-          </div>
-          <div class="ov-stats">
-            <div class="ov-stat"><span class="ov-stat-val income">¥${b.incomeTotal.toLocaleString()}</span><span class="ov-stat-label">収入 (${b.incomeCount}件)</span></div>
-            <div class="ov-stat"><span class="ov-stat-val expense">¥${b.expenseTotal.toLocaleString()}</span><span class="ov-stat-label">経費 (${b.expenseCount}件)</span></div>
-            <div class="ov-stat"><span class="ov-stat-val neutral">${b.receiptCount}</span><span class="ov-stat-label">レシート</span></div>
-          </div>
-          ${catsHtml ? `<div class="ov-cats">${catsHtml}</div>` : ''}
-          <div class="ov-date-range">${dateStr}</div>
-        </div>
-      `;
-    }).join('');
-    qs('#overview-books').innerHTML = booksHtml;
-
-    // ストレージ
-    const s = d.storage;
-    const receiptMB = (s.receiptSizeKB / 1024).toFixed(1);
-    const dbMB = s.dbSizeKB < 1024 ? `${s.dbSizeKB} KB` : `${(s.dbSizeKB/1024).toFixed(1)} MB`;
-    const lastBackup = s.backups.length ? s.backups[0].replace('backup_','').replace('.sqlite','') : 'なし';
-    qs('#overview-storage').innerHTML = `
-      <div class="ov-storage-title">💾 ストレージ</div>
-      <div class="ov-storage-grid">
-        <div class="ov-storage-item"><span class="ov-storage-val">${dbMB}</span><span class="ov-storage-label">データベース</span></div>
-        <div class="ov-storage-item"><span class="ov-storage-val">${receiptMB} MB</span><span class="ov-storage-label">レシート画像 (${s.receiptFiles}枚)</span></div>
-        <div class="ov-storage-item"><span class="ov-storage-val">${s.backups.length}</span><span class="ov-storage-label">バックアップ</span></div>
-        <div class="ov-storage-item"><span class="ov-storage-val">${lastBackup}</span><span class="ov-storage-label">最終バックアップ</span></div>
-      </div>
-    `;
+      // ストレージ
+      const s = d.storage;
+      const receiptMB = (s.receiptSizeKB / 1024).toFixed(1);
+      const dbMB = s.dbSizeKB < 1024 ? `${s.dbSizeKB} KB` : `${(s.dbSizeKB/1024).toFixed(1)} MB`;
+      const lastBackup = s.backups.length ? s.backups[0].replace('backup_','').replace('.sqlite','') : 'なし';
+      qs('#admin-overview-storage').innerHTML = `
+        <div class="ov-storage-title">💾 ストレージ</div>
+        <div class="ov-storage-grid">
+          <div class="ov-storage-item"><span class="ov-storage-val">${dbMB}</span><span class="ov-storage-label">データベース</span></div>
+          <div class="ov-storage-item"><span class="ov-storage-val">${receiptMB} MB</span><span class="ov-storage-label">レシート (${s.receiptFiles}枚)</span></div>
+          <div class="ov-storage-item"><span class="ov-storage-val">${s.backups.length}</span><span class="ov-storage-label">バックアップ</span></div>
+          <div class="ov-storage-item"><span class="ov-storage-val">${lastBackup}</span><span class="ov-storage-label">最終バックアップ</span></div>
+        </div>`;
+    } catch {
+      qs('#admin-overview-loading').innerHTML = '<span style="color:var(--text3);font-size:13px">管理者データ取得失敗</span>';
+    }
   },
 
   // ========================================
