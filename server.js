@@ -157,6 +157,7 @@ db.exec(`
 const migrations = [
   "ALTER TABLE users ADD COLUMN avatar_url TEXT",
   "ALTER TABLE users ADD COLUMN auth_provider TEXT DEFAULT 'local'",
+  "ALTER TABLE expenses ADD COLUMN created_by INTEGER",
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* カラムが既に存在する場合は無視 */ }
@@ -292,7 +293,7 @@ router.post('/api/auth/login', async (req, res) => {
 
     const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
     if (!user) return res.status(401).json({ error: 'メールまたはパスワードが正しくありません' });
-    if (!user.password_hash || user.auth_provider === 'google') return res.status(401).json({ error: 'このアカウントはGoogleログインをご利用ください' });
+    if (!user.password_hash) return res.status(401).json({ error: 'このアカウントはGoogleログインをご利用ください' });
 
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'メールまたはパスワードが正しくありません' });
@@ -386,7 +387,7 @@ router.get('/api/config', (req, res) => {
 
 router.get('/api/auth/me', auth, (req, res) => {
   const user = db.prepare('SELECT id, email, name, avatar_url, auth_provider, role FROM users WHERE id = ?').get(req.userId);
-  const ownBooks = db.prepare('SELECT *, "owner" as memberRole FROM books WHERE user_id = ? ORDER BY created_at').all(req.userId);
+  const ownBooks = db.prepare("SELECT *, 'owner' as memberRole FROM books WHERE user_id = ? ORDER BY created_at").all(req.userId);
   const sharedBooks = db.prepare("SELECT b.id, b.name, b.emoji, b.created_at, bm.role as memberRole, bm.can_view_income, bm.can_view_all_expenses, bm.can_input_expense, bm.can_input_income FROM book_members bm JOIN books b ON bm.book_id = b.id WHERE bm.user_id = ? ORDER BY b.created_at").all(req.userId);
   const books = [...ownBooks, ...sharedBooks];
   res.json({ user, books });
@@ -397,7 +398,7 @@ router.get('/api/auth/me', auth, (req, res) => {
 // ========================================
 
 router.get('/api/books', auth, (req, res) => {
-  const own = db.prepare('SELECT *, "owner" as memberRole FROM books WHERE user_id = ? ORDER BY created_at').all(req.userId);
+  const own = db.prepare("SELECT *, 'owner' as memberRole FROM books WHERE user_id = ? ORDER BY created_at").all(req.userId);
   const shared = db.prepare("SELECT b.id, b.name, b.emoji, b.created_at, bm.role as memberRole, bm.can_view_income, bm.can_view_all_expenses, bm.can_input_expense, bm.can_input_income FROM book_members bm JOIN books b ON bm.book_id = b.id WHERE bm.user_id = ? ORDER BY b.created_at").all(req.userId);
   res.json([...own, ...shared]);
 });
