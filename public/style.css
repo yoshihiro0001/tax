@@ -322,7 +322,9 @@ body { min-height: 100dvh; }
 .ov-storage-val { font-size: 16px; font-weight: 800; display: block; color: var(--text); }
 .ov-storage-label { font-size: 11px; color: var(--text3); }
 
-/* 管理者エリア区切り */
+/* ============================================
+   管理者パネル
+   ============================================ */
 .admin-divider {
   display: flex; align-items: center; gap: 12px; margin: 24px 0 16px;
   color: var(--pri); font-size: 13px; font-weight: 700;
@@ -331,47 +333,67 @@ body { min-height: 100dvh; }
   content: ''; flex: 1; height: 2px; background: linear-gradient(90deg, var(--pri-bg), var(--pri), var(--pri-bg));
 }
 
-/* 管理者ユーザーリスト */
-.admin-user-item {
-  display: flex; align-items: center; gap: 10px; padding: 12px 0;
-  border-bottom: 1px solid var(--border); font-size: 13px;
+/* KPIグリッド */
+.kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+.kpi-card {
+  background: var(--card); border-radius: var(--radius-sm); padding: 14px 12px;
+  text-align: center; box-shadow: var(--shadow);
+  animation: card-pop .4s cubic-bezier(.22,1,.36,1) both;
 }
-.admin-user-item:last-child { border-bottom: none; }
-.admin-user-avatar {
-  width: 32px; height: 32px; border-radius: 999px; background: var(--pri-bg); color: var(--pri);
-  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px;
+.kpi-val { font-size: 20px; font-weight: 800; display: block; margin-bottom: 2px; }
+.kpi-label { font-size: 10px; color: var(--text3); font-weight: 500; }
+.kpi-val.pri { color: var(--pri); }
+.kpi-val.green { color: var(--green); }
+.kpi-val.red { color: var(--red); }
+
+/* ユーザー管理行 */
+.au-item {
+  display: flex; align-items: center; gap: 10px; padding: 14px 0;
+  border-bottom: 1px solid var(--border); animation: tx-in .3s both;
+}
+.au-item:last-child { border-bottom: none; }
+.au-avatar {
+  width: 36px; height: 36px; border-radius: 999px; background: var(--pri-bg); color: var(--pri);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px;
   flex-shrink: 0; overflow: hidden;
 }
-.admin-user-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.admin-user-info { flex: 1; min-width: 0; }
-.admin-user-name { font-weight: 600; }
-.admin-user-email { font-size: 11px; color: var(--text3); }
-.admin-user-meta { text-align: right; }
-.admin-user-role {
+.au-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.au-info { flex: 1; min-width: 0; }
+.au-name { font-size: 14px; font-weight: 600; }
+.au-email { font-size: 11px; color: var(--text3); }
+.au-stats { font-size: 11px; color: var(--text2); margin-top: 2px; }
+.au-controls { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.au-select {
+  padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px;
+  font-size: 11px; font-family: var(--font); background: var(--card); color: var(--text);
+  cursor: pointer;
+}
+.au-select:focus { border-color: var(--pri); }
+.au-badge {
   display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 600;
 }
-.admin-user-role.admin { background: var(--pri-bg); color: var(--pri); }
-.admin-user-role.user { background: var(--bg); color: var(--text3); }
-.admin-user-date { font-size: 10px; color: var(--text3); margin-top: 2px; }
+.au-badge.admin { background: var(--pri-bg); color: var(--pri); }
+.au-badge.free { background: var(--bg); color: var(--text3); }
+.au-badge.pro { background: var(--green-bg); color: var(--green); }
+.au-badge.business { background: #fef3c7; color: #d97706; }
+.au-date { font-size: 10px; color: var(--text3); }
 
-/* データの仕組みフロー */
-.how-flow {
-  display: flex; align-items: center; justify-content: center; gap: 4px;
-  padding: 16px 0; overflow-x: auto;
-}
-.how-step {
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  padding: 10px 8px; background: var(--bg); border-radius: var(--radius-sm);
-  min-width: 64px; text-align: center;
-}
-.how-icon { font-size: 22px; }
-.how-text { font-size: 11px; font-weight: 600; line-height: 1.3; }
-.how-text small { font-weight: 400; color: var(--text3); }
-.how-arrow { color: var(--text3); font-size: 14px; font-weight: 600; flex-shrink: 0; }
+/* ストレージバー */
+.storage-bar-wrap { margin-bottom: 12px; }
+.storage-bar-label { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
+.storage-bar-name { font-weight: 600; }
+.storage-bar-val { color: var(--text2); }
+.storage-bar { height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; }
+.storage-bar-fill { height: 100%; border-radius: 4px; transition: width .6s cubic-bezier(.22,1,.36,1); }
+.storage-bar-fill.db { background: var(--pri); }
+.storage-bar-fill.img { background: var(--green); }
 
-.how-info {
-  margin-top: 12px; padding: 12px; background: var(--bg); border-radius: var(--radius-sm);
-}
+.storage-detail { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.storage-detail-item { padding: 10px; background: var(--bg); border-radius: var(--radius-xs); text-align: center; }
+.storage-detail-val { font-size: 16px; font-weight: 800; display: block; }
+.storage-detail-label { font-size: 10px; color: var(--text3); }
+
+/* (kept for backwards compat) */
 .how-info-row {
   display: flex; justify-content: space-between; padding: 6px 0; font-size: 12px;
   border-bottom: 1px solid var(--border);

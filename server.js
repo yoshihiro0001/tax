@@ -49,8 +49,9 @@ try {
   }
 } catch (e) { /* テーブルが存在しない場合は無視 */ }
 
-// 3) 既存テーブルに role カラムがなければ追加
+// 3) 既存テーブルにカラムがなければ追加
 try { db.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'"); } catch (e) { /* 既にある */ }
+try { db.exec("ALTER TABLE users ADD COLUMN plan TEXT DEFAULT 'free'"); } catch (e) { /* 既にある */ }
 
 // === テーブル作成 ===
 db.exec(`
@@ -62,6 +63,7 @@ db.exec(`
     avatar_url TEXT,
     auth_provider TEXT DEFAULT 'local',
     role TEXT DEFAULT 'user',
+    plan TEXT DEFAULT 'free',
     created_at TEXT DEFAULT (datetime('now','localtime'))
   );
   CREATE TABLE IF NOT EXISTS sessions (
@@ -582,29 +584,37 @@ function adminOnly(req, res, next) {
 // ========================================
 // 管理者 API
 // ========================================
+
+// 全体概要: KPI + ユーザー別詳細 + ストレージ
 router.get('/api/admin/overview', auth, adminOnly, (req, res) => {
   try {
-    // 全ユーザーの全帳簿を取得
-    const allUsers = db.prepare("SELECT id, email, name, avatar_url, auth_provider, role, created_at FROM users ORDER BY created_at").all();
-    const userBooks = db.prepare('SELECT * FROM books ORDER BY created_at').all();
-    const booksData = userBooks.map(b => {
-      const ic = db.prepare('SELECT COUNT(*) as c, COALESCE(SUM(amount),0) as t FROM income WHERE book_id=?').get(b.id);
-      const ec = db.prepare('SELECT COUNT(*) as c, COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=?').get(b.id);
-      const rc = db.prepare("SELECT COUNT(*) as c FROM expenses WHERE book_id=? AND receipt_path IS NOT NULL AND receipt_path != ''").get(b.id);
-      const cats = db.prepare('SELECT category, SUM(amount) as total, COUNT(*) as count FROM expenses WHERE book_id=? GROUP BY category ORDER BY total DESC').all(b.id);
-      const oldest = db.prepare('SELECT MIN(d) as d FROM (SELECT MIN(date) as d FROM income WHERE book_id=? UNION SELECT MIN(date) as d FROM expenses WHERE book_id=?)').get(b.id, b.id);
-      const newest = db.prepare('SELECT MAX(d) as d FROM (SELECT MAX(date) as d FROM income WHERE book_id=? UNION SELECT MAX(date) as d FROM expenses WHERE book_id=?)').get(b.id, b.id);
-      return {
-        id: b.id, name: b.name, emoji: b.emoji,
-        incomeCount: ic.c, incomeTotal: ic.t,
-        expenseCount: ec.c, expenseTotal: ec.t,
-        receiptCount: rc.c,
-        categories: cats,
-        dateRange: { oldest: oldest.d, newest: newest.d }
-      };
+    // 全ユーザー + 各ユーザーのデータ量
+    const allUsers = db.prepare("SELECT id, email, name, avatar_url, auth_provider, role, plan, created_at FROM users ORDER BY created_at").all();
+    const usersDetail = allUsers.map(u => {
+      const books = db.prepare('SELECT id, name, emoji FROM books WHERE user_id=?').all(u.id);
+      const bookIds = books.map(b => b.id);
+      let incomeCount = 0, incomeTotal = 0, expenseCount = 0, expenseTotal = 0, receiptCount = 0;
+      for (const bid of bookIds) {
+        const ic = db.prepare('SELECT COUNT(*) as c, COALESCE(SUM(amount),0) as t FROM income WHERE book_id=?').get(bid);
+        const ec = db.prepare('SELECT COUNT(*) as c, COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=?').get(bid);
+        const rc = db.prepare("SELECT COUNT(*) as c FROM expenses WHERE book_id=? AND receipt_path IS NOT NULL AND receipt_path != ''").get(bid);
+        incomeCount += ic.c; incomeTotal += ic.t;
+        expenseCount += ec.c; expenseTotal += ec.t;
+        receiptCount += rc.c;
+      }
+      return { ...u, password_hash: undefined, books, bookCount: books.length, incomeCount, incomeTotal, expenseCount, expenseTotal, receiptCount, totalRecords: incomeCount + expenseCount };
     });
 
-    // ストレージ情報
+    // KPI
+    const totalUsers = allUsers.length;
+    const totalBooks = db.prepare('SELECT COUNT(*) as c FROM books').get().c;
+    const totalIncome = db.prepare('SELECT COALESCE(SUM(amount),0) as t FROM income').get().t;
+    const totalExpense = db.prepare('SELECT COALESCE(SUM(amount),0) as t FROM expenses').get().t;
+    const totalRecords = db.prepare('SELECT COUNT(*) as c FROM income').get().c + db.prepare('SELECT COUNT(*) as c FROM expenses').get().c;
+    const planCounts = { free: 0, pro: 0, business: 0 };
+    allUsers.forEach(u => { planCounts[u.plan || 'free'] = (planCounts[u.plan || 'free'] || 0) + 1; });
+
+    // ストレージ
     let dbSizeKB = 0;
     try { dbSizeKB = Math.round(fs.statSync('./data/database.sqlite').size / 1024); } catch {}
     let receiptFiles = 0, receiptSizeKB = 0;
@@ -614,19 +624,26 @@ router.get('/api/admin/overview', auth, adminOnly, (req, res) => {
       files.forEach(f => { try { receiptSizeKB += fs.statSync(`./uploads/${f}`).size; } catch {} });
       receiptSizeKB = Math.round(receiptSizeKB / 1024);
     } catch {}
-
-    // バックアップ情報
     let backups = [];
-    try {
-      backups = fs.readdirSync('./data/backups').filter(f => f.endsWith('.sqlite')).sort().reverse().slice(0, 3);
-    } catch {}
+    try { backups = fs.readdirSync('./data/backups').filter(f => f.endsWith('.sqlite')).sort().reverse().slice(0, 5); } catch {}
 
     res.json({
-      users: allUsers,
-      books: booksData,
-      storage: { dbSizeKB, receiptFiles, receiptSizeKB, backups },
-      system: { dbPath: 'data/database.sqlite', uploadsPath: 'uploads/', backupPath: 'data/backups/' }
+      kpi: { totalUsers, totalBooks, totalRecords, totalIncome, totalExpense, planCounts },
+      users: usersDetail,
+      storage: { dbSizeKB, receiptFiles, receiptSizeKB, backups }
     });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ユーザーのrole/plan変更
+router.put('/api/admin/user/:id', auth, adminOnly, (req, res) => {
+  try {
+    const { role, plan } = req.body;
+    const target = db.prepare('SELECT id FROM users WHERE id=?').get(req.params.id);
+    if (!target) return res.status(404).json({ error: 'ユーザーが見つかりません' });
+    if (role && ['admin', 'user'].includes(role)) db.prepare('UPDATE users SET role=? WHERE id=?').run(role, target.id);
+    if (plan && ['free', 'pro', 'business'].includes(plan)) db.prepare('UPDATE users SET plan=? WHERE id=?').run(plan, target.id);
+    res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

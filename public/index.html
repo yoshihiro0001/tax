@@ -166,39 +166,22 @@
 
         <!-- ▼ 管理者専用エリア（admin のみ表示） -->
         <div id="admin-area" style="display:none">
-          <div class="admin-divider"><span>管理者メニュー</span></div>
+          <div class="admin-divider"><span>管理者パネル</span></div>
 
+          <!-- KPI カード -->
+          <div class="kpi-grid" id="admin-kpi"></div>
+
+          <!-- ユーザー管理テーブル -->
           <div class="card">
-            <h3 class="card-title">👥 登録ユーザー</h3>
+            <h3 class="card-title">👥 ユーザー管理</h3>
+            <div id="admin-users-loading" class="overview-loading"><div class="spinner"></div></div>
             <div id="admin-users"></div>
           </div>
 
-          <div class="card card-overview">
-            <h3 class="card-title">📊 全体データ概要</h3>
-            <div id="admin-overview-loading" class="overview-loading"><div class="spinner"></div></div>
-            <div id="admin-overview-content" style="display:none">
-              <div id="admin-overview-books"></div>
-              <div class="ov-storage" id="admin-overview-storage"></div>
-            </div>
-          </div>
-
-          <div class="card card-how">
-            <h3 class="card-title">💡 システム構成</h3>
-            <div class="how-flow">
-              <div class="how-step"><span class="how-icon">📷</span><span class="how-text">レシート撮影<br><small>OCRで自動読取</small></span></div>
-              <div class="how-arrow">→</div>
-              <div class="how-step"><span class="how-icon">✅</span><span class="how-text">確認・保存<br><small>科目を自動推定</small></span></div>
-              <div class="how-arrow">→</div>
-              <div class="how-step"><span class="how-icon">💾</span><span class="how-text">帳簿に記録<br><small>SQLiteに安全保存</small></span></div>
-              <div class="how-arrow">→</div>
-              <div class="how-step"><span class="how-icon">📊</span><span class="how-text">レポート<br><small>自動集計・AI出力</small></span></div>
-            </div>
-            <div class="how-info">
-              <div class="how-info-row"><span class="how-info-label">保存先</span><span class="how-info-val">data/database.sqlite</span></div>
-              <div class="how-info-row"><span class="how-info-label">レシート</span><span class="how-info-val">uploads/ フォルダ</span></div>
-              <div class="how-info-row"><span class="how-info-label">バックアップ</span><span class="how-info-val">data/backups/ フォルダ</span></div>
-              <div class="how-info-row"><span class="how-info-label">構造</span><span class="how-info-val">ユーザー → 帳簿 → 収入/経費</span></div>
-            </div>
+          <!-- ストレージ -->
+          <div class="card">
+            <h3 class="card-title">💾 ストレージ</h3>
+            <div id="admin-storage"></div>
           </div>
         </div>
 

@@ -641,81 +641,94 @@ const App = {
   },
 
   async loadAdminOverview() {
-    qs('#admin-overview-loading').style.display = 'flex';
-    qs('#admin-overview-content').style.display = 'none';
+    qs('#admin-users-loading').style.display = 'flex';
     try {
       const d = await this.api('/api/admin/overview');
-      qs('#admin-overview-loading').style.display = 'none';
-      qs('#admin-overview-content').style.display = '';
+      qs('#admin-users-loading').style.display = 'none';
 
-      // ユーザー一覧
-      qs('#admin-users').innerHTML = d.users.map(u => {
-        const avatar = u.avatar_url
-          ? `<img src="${u.avatar_url}" alt="">`
-          : u.name.charAt(0).toUpperCase();
-        const roleClass = u.role === 'admin' ? 'admin' : 'user';
-        const roleLabel = u.role === 'admin' ? '管理者' : 'ユーザー';
-        const dateStr = u.created_at ? u.created_at.slice(0, 10) : '';
+      // KPI カード
+      const k = d.kpi;
+      qs('#admin-kpi').innerHTML = `
+        <div class="kpi-card" style="animation-delay:0s"><span class="kpi-val pri">${k.totalUsers}</span><span class="kpi-label">ユーザー数</span></div>
+        <div class="kpi-card" style="animation-delay:.05s"><span class="kpi-val">${k.totalRecords}</span><span class="kpi-label">総取引数</span></div>
+        <div class="kpi-card" style="animation-delay:.1s"><span class="kpi-val">${k.totalBooks}</span><span class="kpi-label">帳簿数</span></div>
+        <div class="kpi-card" style="animation-delay:.15s"><span class="kpi-val green">¥${this.fmtNum(k.totalIncome)}</span><span class="kpi-label">総収入</span></div>
+        <div class="kpi-card" style="animation-delay:.2s"><span class="kpi-val red">¥${this.fmtNum(k.totalExpense)}</span><span class="kpi-label">総経費</span></div>
+        <div class="kpi-card" style="animation-delay:.25s"><span class="kpi-val">${k.planCounts.free}/${k.planCounts.pro||0}/${k.planCounts.business||0}</span><span class="kpi-label">Free/Pro/Biz</span></div>
+      `;
+
+      // ユーザー管理
+      qs('#admin-users').innerHTML = d.users.map((u, i) => {
+        const avatar = u.avatar_url ? `<img src="${u.avatar_url}" alt="">` : this.esc(u.name.charAt(0).toUpperCase());
+        const planBadge = u.plan || 'free';
+        const planLabels = { free: 'Free', pro: 'Pro', business: 'Business' };
         return `
-          <div class="admin-user-item">
-            <div class="admin-user-avatar">${avatar}</div>
-            <div class="admin-user-info">
-              <div class="admin-user-name">${this.esc(u.name)}</div>
-              <div class="admin-user-email">${this.esc(u.email)}</div>
+          <div class="au-item" style="--i:${i}">
+            <div class="au-avatar">${avatar}</div>
+            <div class="au-info">
+              <div class="au-name">${this.esc(u.name)}</div>
+              <div class="au-email">${this.esc(u.email)}</div>
+              <div class="au-stats">${u.bookCount}帳簿 ・ ${u.totalRecords}件 ・ レシート${u.receiptCount}枚</div>
             </div>
-            <div class="admin-user-meta">
-              <span class="admin-user-role ${roleClass}">${roleLabel}</span>
-              <div class="admin-user-date">${dateStr}</div>
+            <div class="au-controls">
+              <select class="au-select" data-uid="${u.id}" data-field="role">
+                <option value="user"${u.role==='user'?' selected':''}>ユーザー</option>
+                <option value="admin"${u.role==='admin'?' selected':''}>管理者</option>
+              </select>
+              <select class="au-select" data-uid="${u.id}" data-field="plan">
+                <option value="free"${planBadge==='free'?' selected':''}>Free</option>
+                <option value="pro"${planBadge==='pro'?' selected':''}>Pro</option>
+                <option value="business"${planBadge==='business'?' selected':''}>Business</option>
+              </select>
+              <span class="au-date">${u.created_at ? u.created_at.slice(0,10) : ''}</span>
             </div>
           </div>`;
       }).join('');
 
-      // 全帳簿データ
-      const booksHtml = d.books.map((b, idx) => {
-        const total = b.incomeCount + b.expenseCount;
-        const maxCat = b.categories.length ? b.categories[0].total : 1;
-        const catsHtml = b.categories.slice(0, 5).map(c => `
-          <div class="ov-cat-row">
-            <span class="ov-cat-name">${this.categoryIcon(c.category)} ${this.categoryName(c.category)}</span>
-            <div class="ov-cat-bar"><div class="ov-cat-fill" style="width:${(c.total/maxCat*100).toFixed(0)}%"></div></div>
-            <span class="ov-cat-val">¥${c.total.toLocaleString()}</span>
-          </div>`).join('');
-        const dateStr = b.dateRange?.oldest && b.dateRange?.newest
-          ? `${b.dateRange.oldest} 〜 ${b.dateRange.newest}` : 'データなし';
-        return `
-          <div class="ov-book" style="animation-delay:${idx*0.06}s">
-            <div class="ov-book-head">
-              <span class="ov-book-emoji">${b.emoji}</span>
-              <span class="ov-book-name">${this.esc(b.name)}</span>
-              <span class="ov-book-badge">${total}件</span>
-            </div>
-            <div class="ov-stats">
-              <div class="ov-stat"><span class="ov-stat-val income">¥${b.incomeTotal.toLocaleString()}</span><span class="ov-stat-label">収入 (${b.incomeCount}件)</span></div>
-              <div class="ov-stat"><span class="ov-stat-val expense">¥${b.expenseTotal.toLocaleString()}</span><span class="ov-stat-label">経費 (${b.expenseCount}件)</span></div>
-              <div class="ov-stat"><span class="ov-stat-val neutral">${b.receiptCount}</span><span class="ov-stat-label">レシート</span></div>
-            </div>
-            ${catsHtml ? `<div class="ov-cats">${catsHtml}</div>` : ''}
-            <div class="ov-date-range">${dateStr}</div>
-          </div>`;
-      }).join('');
-      qs('#admin-overview-books').innerHTML = booksHtml;
+      // role/plan 変更イベント
+      qs('#admin-users').querySelectorAll('.au-select').forEach(sel => {
+        sel.addEventListener('change', async () => {
+          const uid = sel.dataset.uid;
+          const field = sel.dataset.field;
+          const body = {};
+          body[field] = sel.value;
+          try {
+            await this.api(`/api/admin/user/${uid}`, { method: 'PUT', body: JSON.stringify(body) });
+            this.toast(`${field === 'role' ? '権限' : 'プラン'}を変更しました`, 'success');
+          } catch (err) { this.toast(err.message, 'error'); }
+        });
+      });
 
       // ストレージ
       const s = d.storage;
-      const receiptMB = (s.receiptSizeKB / 1024).toFixed(1);
+      const totalKB = s.dbSizeKB + s.receiptSizeKB;
+      const dbPct = totalKB ? Math.round(s.dbSizeKB / totalKB * 100) : 0;
+      const imgPct = totalKB ? Math.round(s.receiptSizeKB / totalKB * 100) : 0;
       const dbMB = s.dbSizeKB < 1024 ? `${s.dbSizeKB} KB` : `${(s.dbSizeKB/1024).toFixed(1)} MB`;
-      const lastBackup = s.backups.length ? s.backups[0].replace('backup_','').replace('.sqlite','') : 'なし';
-      qs('#admin-overview-storage').innerHTML = `
-        <div class="ov-storage-title">💾 ストレージ</div>
-        <div class="ov-storage-grid">
-          <div class="ov-storage-item"><span class="ov-storage-val">${dbMB}</span><span class="ov-storage-label">データベース</span></div>
-          <div class="ov-storage-item"><span class="ov-storage-val">${receiptMB} MB</span><span class="ov-storage-label">レシート (${s.receiptFiles}枚)</span></div>
-          <div class="ov-storage-item"><span class="ov-storage-val">${s.backups.length}</span><span class="ov-storage-label">バックアップ</span></div>
-          <div class="ov-storage-item"><span class="ov-storage-val">${lastBackup}</span><span class="ov-storage-label">最終バックアップ</span></div>
+      const imgMB = (s.receiptSizeKB / 1024).toFixed(1);
+      const lastBk = s.backups.length ? s.backups[0].replace('backup_','').replace('.sqlite','') : 'なし';
+      qs('#admin-storage').innerHTML = `
+        <div class="storage-bar-wrap">
+          <div class="storage-bar-label"><span class="storage-bar-name">データベース</span><span class="storage-bar-val">${dbMB}</span></div>
+          <div class="storage-bar"><div class="storage-bar-fill db" style="width:${Math.max(dbPct,5)}%"></div></div>
+        </div>
+        <div class="storage-bar-wrap">
+          <div class="storage-bar-label"><span class="storage-bar-name">レシート画像</span><span class="storage-bar-val">${imgMB} MB (${s.receiptFiles}枚)</span></div>
+          <div class="storage-bar"><div class="storage-bar-fill img" style="width:${Math.max(imgPct,5)}%"></div></div>
+        </div>
+        <div class="storage-detail">
+          <div class="storage-detail-item"><span class="storage-detail-val">${s.backups.length}</span><span class="storage-detail-label">バックアップ数</span></div>
+          <div class="storage-detail-item"><span class="storage-detail-val">${lastBk}</span><span class="storage-detail-label">最終バックアップ</span></div>
         </div>`;
     } catch {
-      qs('#admin-overview-loading').innerHTML = '<span style="color:var(--text3);font-size:13px">管理者データ取得失敗</span>';
+      qs('#admin-users-loading').innerHTML = '<span style="color:var(--text3);font-size:13px">管理者データ取得失敗</span>';
     }
+  },
+
+  fmtNum(n) {
+    if (n >= 10000000) return (n/10000000).toFixed(1) + '千万';
+    if (n >= 10000) return Math.round(n/10000) + '万';
+    return n.toLocaleString();
   },
 
   // ========================================
