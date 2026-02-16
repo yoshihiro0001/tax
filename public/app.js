@@ -269,6 +269,7 @@ const App = {
       document.querySelectorAll('.bnav-item').forEach(b => b.classList.remove('active'));
       this.loadHistory();
     });
+    qs('#btn-approve-all').addEventListener('click', () => this.approveAll());
   },
 
   async loadDashboard() {
@@ -287,6 +288,99 @@ const App = {
       if (incBtn) incBtn.style.display = canIncome ? '' : 'none';
       const incSection = qs('#home-income')?.closest('.dash-card');
       if (incSection) incSection.style.display = canViewIncome ? '' : 'none';
+
+      // 承認待ちデータ表示
+      const pendingSec = qs('#pending-section');
+      if (d.pendingCount > 0 && (b.memberRole === 'owner' || b.memberRole === 'manager')) {
+        pendingSec.style.display = '';
+        qs('#pending-badge').textContent = d.pendingCount;
+        this.loadPendingItems();
+      } else {
+        pendingSec.style.display = 'none';
+      }
+    } catch (err) { this.toast(err.message, 'error'); }
+  },
+
+  async loadPendingItems() {
+    if (!this.currentBook) return;
+    try {
+      const d = await this.api(`/api/pending?bookId=${this.currentBook.id}`);
+      const wrap = qs('#pending-list');
+      const items = [
+        ...d.expenses.map(e => ({ ...e, kind: 'expense' })),
+        ...d.income.map(i => ({ ...i, kind: 'income', category: i.type }))
+      ].sort((a, b) => (b.created_at || '') > (a.created_at || '') ? 1 : -1);
+
+      if (items.length === 0) {
+        qs('#pending-section').style.display = 'none';
+        return;
+      }
+
+      wrap.innerHTML = items.map((t, i) => {
+        const isInc = t.kind === 'income';
+        const icon = isInc ? '💰' : this.categoryIcon(t.category);
+        const sign = isInc ? '+' : '-';
+        const cls = isInc ? 'income' : 'expense';
+        const desc = t.description || this.categoryName(t.category);
+        const creator = t.creator_name || '不明';
+        const createdAt = t.created_at ? t.created_at.slice(5, 16).replace('T', ' ') : '';
+        return `<div class="pending-item" style="--i:${i}">
+          <div class="pending-main">
+            <div class="tx-icon ${cls}">${icon}</div>
+            <div class="tx-info">
+              <div class="tx-desc">${this.esc(desc)}</div>
+              <div class="pending-meta">
+                <span class="pending-creator">👤 ${this.esc(creator)}</span>
+                <span class="pending-date">${this.fmtDate(t.date)}</span>
+                <span class="pending-submitted">${createdAt}</span>
+              </div>
+            </div>
+            <div class="tx-amount ${cls}">${sign}¥${Math.abs(t.amount).toLocaleString()}</div>
+          </div>
+          <div class="pending-actions">
+            <button class="pending-btn approve" data-type="${t.kind}" data-id="${t.id}" title="承認">✓ 承認</button>
+            <button class="pending-btn detail" data-type="${t.kind}" data-id="${t.id}" title="詳細">📋</button>
+            <button class="pending-btn reject" data-type="${t.kind}" data-id="${t.id}" title="却下">✕</button>
+          </div>
+        </div>`;
+      }).join('');
+
+      wrap.querySelectorAll('.pending-btn.approve').forEach(btn => {
+        btn.addEventListener('click', () => this.approveSingle(btn.dataset.type, btn.dataset.id));
+      });
+      wrap.querySelectorAll('.pending-btn.reject').forEach(btn => {
+        btn.addEventListener('click', () => this.rejectSingle(btn.dataset.type, btn.dataset.id));
+      });
+      wrap.querySelectorAll('.pending-btn.detail').forEach(btn => {
+        btn.addEventListener('click', () => this.openEditModal(btn.dataset.id, btn.dataset.type));
+      });
+    } catch (err) { console.error('pending load error:', err); }
+  },
+
+  async approveSingle(type, id) {
+    try {
+      await this.api(`/api/approve/${type}/${id}`, { method: 'PUT' });
+      this.toast('承認しました', 'success');
+      this.loadDashboard();
+    } catch (err) { this.toast(err.message, 'error'); }
+  },
+
+  async rejectSingle(type, id) {
+    if (!confirm('このデータを却下（削除）しますか？')) return;
+    try {
+      await this.api(`/api/reject/${type}/${id}`, { method: 'DELETE' });
+      this.toast('却下しました');
+      this.loadDashboard();
+    } catch (err) { this.toast(err.message, 'error'); }
+  },
+
+  async approveAll() {
+    if (!this.currentBook) return;
+    if (!confirm('すべての未取込データを承認しますか？')) return;
+    try {
+      const d = await this.api('/api/approve-all', { method: 'PUT', body: JSON.stringify({ bookId: this.currentBook.id }) });
+      this.toast(`${d.approved}件を承認しました`, 'success');
+      this.loadDashboard();
     } catch (err) { this.toast(err.message, 'error'); }
   },
 
@@ -301,9 +395,12 @@ const App = {
       const sign = isInc ? '+' : '-';
       const cls = isInc ? 'income' : 'expense';
       const desc = t.description || this.categoryName(t.category);
-      return `<div class="tx-item" style="--i:${i}" data-id="${t.id}" data-kind="${t.kind}">
+      const isPending = t.status === 'pending';
+      const pendingBadge = isPending ? '<span class="tx-pending-badge">承認待ち</span>' : '';
+      const creatorInfo = t.creator_name ? `<span class="tx-creator">by ${this.esc(t.creator_name)}</span>` : '';
+      return `<div class="tx-item${isPending ? ' tx-pending' : ''}" style="--i:${i}" data-id="${t.id}" data-kind="${t.kind}">
         <div class="tx-icon ${cls}">${icon}</div>
-        <div class="tx-info"><div class="tx-desc">${this.esc(desc)}</div><div class="tx-date">${this.fmtDate(t.date)}</div></div>
+        <div class="tx-info"><div class="tx-desc">${this.esc(desc)}${pendingBadge}</div><div class="tx-date">${this.fmtDate(t.date)} ${creatorInfo}</div></div>
         <div class="tx-amount ${cls}">${sign}¥${Math.abs(t.amount).toLocaleString()}</div>
       </div>`;
     }).join('');
@@ -1559,14 +1656,16 @@ const App = {
     const y = qs('#hist-year').value;
     const m = qs('#hist-month').value;
     const t = qs('#hist-type').value;
+    const isOwner = this.currentBook.memberRole === 'owner' || this.currentBook.memberRole === 'manager';
+    const pendingParam = isOwner ? '&include_pending=1' : '';
     try {
       let txs = [];
       if (!t || t === 'income') {
-        const inc = await this.api(`/api/income?bookId=${this.currentBook.id}&year=${y}${m?'&month='+m:''}`);
+        const inc = await this.api(`/api/income?bookId=${this.currentBook.id}&year=${y}${m?'&month='+m:''}${pendingParam}`);
         txs = txs.concat(inc.map(i => ({ ...i, kind: 'income', category: i.type })));
       }
       if (!t || t === 'expense') {
-        const exp = await this.api(`/api/expenses?bookId=${this.currentBook.id}&year=${y}${m?'&month='+m:''}`);
+        const exp = await this.api(`/api/expenses?bookId=${this.currentBook.id}&year=${y}${m?'&month='+m:''}${pendingParam}`);
         txs = txs.concat(exp.map(e => ({ ...e, kind: 'expense' })));
       }
       txs.sort((a,b) => b.date > a.date ? 1 : b.date < a.date ? -1 : 0);
@@ -1642,7 +1741,7 @@ const App = {
         description: qs('#edit-desc').value
       };
       if (kind === 'expense') body.category = qs('#edit-category').value;
-      else body.type = '振込';
+      else { body.type = '振込'; body.income_type = qs('#edit-income-type').value; }
       try {
         await this.api(url, { method: 'PUT', body: JSON.stringify(body) });
         this.closeOverlay('edit');
@@ -1698,13 +1797,20 @@ const App = {
 
   async openEditModal(id, kind) {
     try {
+      // 詳細APIで1件取得（記入者・承認者情報付き）
+      const url = kind === 'income' ? `/api/income/${id}` : `/api/expense/${id}`;
       let item;
-      if (kind === 'income') {
-        const inc = await this.api(`/api/income?bookId=${this.currentBook.id}`);
-        item = inc.find(i => i.id == id);
-      } else {
-        const exp = await this.api(`/api/expenses?bookId=${this.currentBook.id}`);
-        item = exp.find(e => e.id == id);
+      try {
+        item = await this.api(url);
+      } catch {
+        // フォールバック: 一覧から取得
+        if (kind === 'income') {
+          const inc = await this.api(`/api/income?bookId=${this.currentBook.id}&include_pending=1`);
+          item = inc.find(i => i.id == id);
+        } else {
+          const exp = await this.api(`/api/expenses?bookId=${this.currentBook.id}&include_pending=1`);
+          item = exp.find(e => e.id == id);
+        }
       }
       if (!item) { this.toast('データが見つかりません', 'error'); return; }
 
@@ -1715,7 +1821,58 @@ const App = {
       qs('#edit-amount').value = item.amount;
       qs('#edit-desc').value = item.description || '';
       qs('#edit-cat-group').style.display = kind === 'expense' ? '' : 'none';
+      qs('#edit-income-type-group').style.display = kind === 'income' ? '' : 'none';
       if (kind === 'expense') qs('#edit-category').value = item.category;
+      if (kind === 'income' && item.income_type) qs('#edit-income-type').value = item.income_type;
+
+      // 詳細情報エリア表示
+      const detailArea = qs('#edit-detail-area');
+      const receiptPreview = qs('#edit-receipt-preview');
+      const metaGrid = qs('#edit-meta-grid');
+
+      detailArea.style.display = '';
+      let metaHtml = '';
+
+      // レシート画像
+      if (kind === 'expense' && item.receipt_path) {
+        receiptPreview.style.display = '';
+        qs('#edit-receipt-img').src = BASE + item.receipt_path;
+      } else {
+        receiptPreview.style.display = 'none';
+      }
+
+      // 記入者情報
+      if (item.creator_name) {
+        metaHtml += `<div class="edit-meta-item"><span class="edit-meta-label">記入者</span><span class="edit-meta-val">👤 ${this.esc(item.creator_name)}${item.creator_email ? ' (' + this.esc(item.creator_email) + ')' : ''}</span></div>`;
+      }
+
+      // ステータス
+      if (item.status) {
+        const statusLabels = { approved: '✅ 承認済み', pending: '⏳ 承認待ち', rejected: '❌ 却下' };
+        metaHtml += `<div class="edit-meta-item"><span class="edit-meta-label">ステータス</span><span class="edit-meta-val edit-meta-status-${item.status}">${statusLabels[item.status] || item.status}</span></div>`;
+      }
+
+      // 承認情報
+      if (item.approved_at && item.approver_name) {
+        metaHtml += `<div class="edit-meta-item"><span class="edit-meta-label">承認者</span><span class="edit-meta-val">🛡 ${this.esc(item.approver_name)} (${item.approved_at.slice(0, 16).replace('T', ' ')})</span></div>`;
+      }
+
+      // 入力方法
+      if (kind === 'expense' && item.source) {
+        const sourceLabels = { manual: '✏️ 手動入力', ocr: '📷 レシート読取', csv: '📄 CSV取込' };
+        metaHtml += `<div class="edit-meta-item"><span class="edit-meta-label">入力方法</span><span class="edit-meta-val">${sourceLabels[item.source] || item.source}</span></div>`;
+      }
+
+      // 作成・更新日時
+      if (item.created_at) {
+        metaHtml += `<div class="edit-meta-item"><span class="edit-meta-label">作成</span><span class="edit-meta-val">${item.created_at.slice(0, 16).replace('T', ' ')}</span></div>`;
+      }
+      if (item.updated_at && item.updated_at !== item.created_at) {
+        metaHtml += `<div class="edit-meta-item"><span class="edit-meta-label">更新</span><span class="edit-meta-val">${item.updated_at.slice(0, 16).replace('T', ' ')}</span></div>`;
+      }
+
+      metaGrid.innerHTML = metaHtml || '';
+
       this.openOverlay('edit');
     } catch (err) { this.toast(err.message, 'error'); }
   },

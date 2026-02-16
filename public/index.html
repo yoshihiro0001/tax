@@ -102,6 +102,15 @@
           </button>
         </div>
 
+        <!-- 未取込データ（オーナー/管理者のみ表示） -->
+        <div id="pending-section" style="display:none">
+          <div class="section-head">
+            <h2>📥 未取込データ <span class="pending-badge" id="pending-badge">0</span></h2>
+            <button class="link-btn" id="btn-approve-all">すべて承認</button>
+          </div>
+          <div class="pending-list" id="pending-list"></div>
+        </div>
+
         <div class="section-head">
           <h2>最近の取引</h2>
           <button class="link-btn" id="btn-view-all">すべて見る</button>
@@ -399,15 +408,23 @@
     </div>
   </div>
 
-  <!-- 編集モーダル -->
+  <!-- 編集・詳細モーダル -->
   <div class="overlay" id="overlay-edit" style="display:none">
     <div class="modal-sheet">
       <div class="modal-head"><h3 id="edit-title">取引を編集</h3><button class="btn-close" id="close-edit">&times;</button></div>
+      <!-- 詳細情報エリア -->
+      <div id="edit-detail-area" class="edit-detail-area" style="display:none">
+        <div id="edit-receipt-preview" class="edit-receipt-preview" style="display:none">
+          <img id="edit-receipt-img" alt="レシート">
+        </div>
+        <div class="edit-meta-grid" id="edit-meta-grid"></div>
+      </div>
       <form id="form-edit" class="modal-form">
         <input type="hidden" id="edit-id"><input type="hidden" id="edit-kind">
         <div class="fg"><label>日付</label><input type="date" id="edit-date" class="fi" required></div>
         <div class="fg"><label>金額</label><div class="fi-amt"><span>¥</span><input type="number" id="edit-amount" class="fi" required></div></div>
         <div class="fg" id="edit-cat-group" style="display:none"><label>科目</label><select id="edit-category" class="fi"></select></div>
+        <div class="fg" id="edit-income-type-group" style="display:none"><label>所得区分</label><select id="edit-income-type" class="fi"><option value="business">事業所得</option><option value="salary">給与所得</option><option value="fx_stock">株・FX（分離課税）</option><option value="real_estate">不動産所得</option><option value="misc">その他</option></select></div>
         <div class="fg"><label>摘要</label><input type="text" id="edit-desc" class="fi"></div>
         <div class="modal-btns"><button type="button" class="btn-danger" id="btn-edit-delete">削除</button><button type="submit" class="btn-save">保存</button></div>
       </form>

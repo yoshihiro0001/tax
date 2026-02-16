@@ -996,5 +996,105 @@ body { min-height: 100dvh; }
   .topbar { max-width: 600px; margin: 0 auto; }
 }
 
+/* ============================================
+   承認待ちデータセクション
+   ============================================ */
+#pending-section {
+  margin-bottom: 16px;
+}
+#pending-section .section-head h2 {
+  display: flex; align-items: center; gap: 8px;
+}
+.pending-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 22px; height: 22px; padding: 0 6px;
+  background: var(--red); color: #fff; border-radius: 999px;
+  font-size: 12px; font-weight: 700;
+}
+.pending-list {
+  display: flex; flex-direction: column; gap: 8px;
+}
+.pending-item {
+  background: var(--card); border-radius: 14px; padding: 12px;
+  border: 1.5px solid #fbbf24; box-shadow: 0 1px 4px rgba(251,191,36,.12);
+  animation: tx-in .35s cubic-bezier(.22,1,.36,1) calc(var(--i,0) * 0.04s) both;
+}
+.pending-main {
+  display: flex; align-items: center; gap: 10px;
+}
+.pending-meta {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px;
+  font-size: 11px; color: var(--text3);
+}
+.pending-creator {
+  font-weight: 600; color: var(--text2);
+}
+.pending-actions {
+  display: flex; gap: 6px; margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.pending-btn {
+  flex: 1; padding: 7px 0; border: none; border-radius: 8px;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  font-family: var(--font); transition: all .15s;
+}
+.pending-btn.approve {
+  background: var(--green); color: #fff;
+}
+.pending-btn.approve:active { background: #16a34a; transform: scale(.97); }
+.pending-btn.detail {
+  background: var(--bg); color: var(--text2); border: 1px solid var(--border);
+}
+.pending-btn.detail:active { background: var(--border); }
+.pending-btn.reject {
+  background: #fee2e2; color: var(--red);
+}
+.pending-btn.reject:active { background: #fecaca; transform: scale(.97); }
+
+/* 取引リスト内の承認待ちバッジ */
+.tx-pending {
+  border-left: 3px solid #fbbf24;
+}
+.tx-pending-badge {
+  display: inline-block; margin-left: 6px; padding: 1px 6px;
+  background: #fef3c7; color: #92400e; border-radius: 4px;
+  font-size: 10px; font-weight: 700; vertical-align: middle;
+}
+.tx-creator {
+  font-size: 10px; color: var(--text3); margin-left: 4px;
+}
+
+/* ============================================
+   編集モーダル詳細エリア
+   ============================================ */
+.edit-detail-area {
+  padding: 0 16px 8px;
+}
+.edit-receipt-preview {
+  width: 100%; max-height: 200px; border-radius: 12px; overflow: hidden;
+  margin-bottom: 12px; background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+}
+.edit-receipt-preview img {
+  max-width: 100%; max-height: 200px; object-fit: contain; border-radius: 8px;
+}
+.edit-meta-grid {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.edit-meta-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 5px 10px; background: var(--bg); border-radius: 8px;
+  font-size: 12px;
+}
+.edit-meta-label {
+  color: var(--text3); font-weight: 500; min-width: 60px;
+}
+.edit-meta-val {
+  color: var(--text); font-weight: 600; text-align: right;
+}
+.edit-meta-status-pending { color: #d97706; }
+.edit-meta-status-approved { color: var(--green); }
+.edit-meta-status-rejected { color: var(--red); }
+
 /* Print */
 @media print { .topbar, .bottom-nav, .overlay { display: none !important; } }

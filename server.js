@@ -56,6 +56,13 @@ try { db.exec("ALTER TABLE expenses ADD COLUMN created_by INTEGER"); } catch (e)
 try { db.exec("ALTER TABLE income ADD COLUMN income_type TEXT DEFAULT 'business'"); } catch (e) {}
 try { db.exec("ALTER TABLE depreciations ADD COLUMN sold_date TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE depreciations ADD COLUMN sold_amount INTEGER DEFAULT 0"); } catch (e) {}
+try { db.exec("ALTER TABLE expenses ADD COLUMN status TEXT DEFAULT 'approved'"); } catch (e) {}
+try { db.exec("ALTER TABLE expenses ADD COLUMN approved_at TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE expenses ADD COLUMN approved_by INTEGER"); } catch (e) {}
+try { db.exec("ALTER TABLE income ADD COLUMN status TEXT DEFAULT 'approved'"); } catch (e) {}
+try { db.exec("ALTER TABLE income ADD COLUMN approved_at TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE income ADD COLUMN approved_by INTEGER"); } catch (e) {}
+try { db.exec("ALTER TABLE income ADD COLUMN created_by INTEGER"); } catch (e) {}
 
 // === テーブル作成 ===
 db.exec(`
@@ -92,6 +99,10 @@ db.exec(`
     type TEXT NOT NULL DEFAULT '振込',
     income_type TEXT DEFAULT 'business',
     description TEXT,
+    created_by INTEGER,
+    status TEXT DEFAULT 'approved',
+    approved_at TEXT,
+    approved_by INTEGER,
     created_at TEXT DEFAULT (datetime('now','localtime')),
     updated_at TEXT DEFAULT (datetime('now','localtime')),
     FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
@@ -106,6 +117,9 @@ db.exec(`
     receipt_path TEXT,
     source TEXT DEFAULT 'manual',
     created_by INTEGER,
+    status TEXT DEFAULT 'approved',
+    approved_at TEXT,
+    approved_by INTEGER,
     created_at TEXT DEFAULT (datetime('now','localtime')),
     updated_at TEXT DEFAULT (datetime('now','localtime')),
     FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
@@ -558,9 +572,13 @@ router.post('/api/income', auth, (req, res) => {
     if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
     if (!book.can_input_income) return res.status(403).json({ error: '収入の入力権限がありません' });
     if (!date || !amount) return res.status(400).json({ error: '日付と金額は必須' });
-    const r = db.prepare('INSERT INTO income (book_id, date, amount, type, income_type, description) VALUES (?,?,?,?,?,?)').run(book.id, date, parseInt(amount), type || '振込', income_type || 'business', description || '');
-    logActivity(req.userId, 'add_income', `収入追加: ¥${amount}`);
-    res.json({ id: r.lastInsertRowid, success: true });
+    const isOwner = book.memberRole === 'owner';
+    const status = isOwner ? 'approved' : 'pending';
+    const approvedAt = isOwner ? new Date().toISOString() : null;
+    const approvedBy = isOwner ? req.userId : null;
+    const r = db.prepare('INSERT INTO income (book_id, date, amount, type, income_type, description, created_by, status, approved_at, approved_by) VALUES (?,?,?,?,?,?,?,?,?,?)').run(book.id, date, parseInt(amount), type || '振込', income_type || 'business', description || '', req.userId, status, approvedAt, approvedBy);
+    logActivity(req.userId, 'add_income', `収入追加: ¥${amount}${!isOwner ? ' (承認待ち)' : ''}`);
+    res.json({ id: r.lastInsertRowid, success: true, status });
   } catch (err) { logError(err.message, '/api/income', req.userId, err.stack); res.status(500).json({ error: err.message }); }
 });
 
@@ -569,32 +587,56 @@ router.get('/api/income', auth, (req, res) => {
     const book = bookAccess(req);
     if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
     if (!book.can_view_income) return res.json([]);
-    const { year, month } = req.query;
-    let sql = 'SELECT * FROM income WHERE book_id = ?';
+    const { year, month, include_pending } = req.query;
+    let sql = "SELECT i.*, u.name as creator_name FROM income i LEFT JOIN users u ON i.created_by = u.id WHERE i.book_id = ?";
     const params = [book.id];
-    if (year) { sql += " AND strftime('%Y',date) = ?"; params.push(year); }
-    if (month) { sql += " AND strftime('%m',date) = ?"; params.push(month.padStart(2,'0')); }
-    sql += ' ORDER BY date DESC, id DESC';
+    if (!include_pending) { sql += " AND (i.status = 'approved' OR i.status IS NULL)"; }
+    if (year) { sql += " AND strftime('%Y',i.date) = ?"; params.push(year); }
+    if (month) { sql += " AND strftime('%m',i.date) = ?"; params.push(month.padStart(2,'0')); }
+    sql += ' ORDER BY i.date DESC, i.id DESC';
     res.json(db.prepare(sql).all(...params));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 router.put('/api/income/:id', auth, (req, res) => {
   try {
-    const { date, amount, type, description } = req.body;
-    const inc = db.prepare('SELECT i.* FROM income i JOIN books b ON i.book_id=b.id WHERE i.id=? AND b.user_id=?').get(req.params.id, req.userId);
+    const { date, amount, type, income_type, description } = req.body;
+    // オーナーか、自分が作成したものだけ編集可能
+    const inc = db.prepare('SELECT i.*, b.user_id as book_owner FROM income i JOIN books b ON i.book_id=b.id WHERE i.id=?').get(req.params.id);
     if (!inc) return res.status(404).json({ error: '見つかりません' });
-    db.prepare("UPDATE income SET date=?,amount=?,type=?,description=?,updated_at=datetime('now','localtime') WHERE id=?").run(date, parseInt(amount), type, description, inc.id);
+    if (inc.book_owner !== req.userId && inc.created_by !== req.userId) return res.status(403).json({ error: '編集権限がありません' });
+    const updates = [];
+    const params = [];
+    if (date !== undefined) { updates.push('date=?'); params.push(date); }
+    if (amount !== undefined) { updates.push('amount=?'); params.push(parseInt(amount)); }
+    if (type !== undefined) { updates.push('type=?'); params.push(type); }
+    if (income_type !== undefined) { updates.push('income_type=?'); params.push(income_type); }
+    if (description !== undefined) { updates.push('description=?'); params.push(description); }
+    updates.push("updated_at=datetime('now','localtime')");
+    params.push(inc.id);
+    db.prepare(`UPDATE income SET ${updates.join(',')} WHERE id=?`).run(...params);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 router.delete('/api/income/:id', auth, (req, res) => {
   try {
-    const inc = db.prepare('SELECT i.* FROM income i JOIN books b ON i.book_id=b.id WHERE i.id=? AND b.user_id=?').get(req.params.id, req.userId);
+    const inc = db.prepare('SELECT i.*, b.user_id as book_owner FROM income i JOIN books b ON i.book_id=b.id WHERE i.id=?').get(req.params.id);
     if (!inc) return res.status(404).json({ error: '見つかりません' });
+    if (inc.book_owner !== req.userId && inc.created_by !== req.userId) return res.status(403).json({ error: '削除権限がありません' });
     db.prepare('DELETE FROM income WHERE id=?').run(inc.id);
     res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// 収入の詳細（1件取得）
+router.get('/api/income/:id', auth, (req, res) => {
+  try {
+    const inc = db.prepare("SELECT i.*, u.name as creator_name, u.email as creator_email, a.name as approver_name FROM income i LEFT JOIN users u ON i.created_by = u.id LEFT JOIN users a ON i.approved_by = a.id WHERE i.id=?").get(req.params.id);
+    if (!inc) return res.status(404).json({ error: '見つかりません' });
+    const book = bookAccess({ ...req, query: { bookId: inc.book_id }, body: {} });
+    if (!book) return res.status(403).json({ error: 'アクセス権がありません' });
+    res.json(inc);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -610,9 +652,13 @@ router.post('/api/expense', auth, upload.single('receipt'), (req, res) => {
     if (!book.can_input_expense) return res.status(403).json({ error: '経費の入力権限がありません' });
     if (!date || !amount || !category) return res.status(400).json({ error: '日付、金額、科目は必須' });
     const receiptPath = req.file ? `/uploads/${req.file.filename}` : null;
-    const r = db.prepare('INSERT INTO expenses (book_id,date,amount,category,description,receipt_path,source,created_by) VALUES (?,?,?,?,?,?,?,?)').run(book.id, date, parseInt(amount), category, description || '', receiptPath, source || 'manual', req.userId);
-    logActivity(req.userId, 'add_expense', `経費追加: ¥${amount} (${source || 'manual'})`);
-    res.json({ id: r.lastInsertRowid, success: true });
+    const isOwner = book.memberRole === 'owner';
+    const status = isOwner ? 'approved' : 'pending';
+    const approvedAt = isOwner ? new Date().toISOString() : null;
+    const approvedBy = isOwner ? req.userId : null;
+    const r = db.prepare('INSERT INTO expenses (book_id,date,amount,category,description,receipt_path,source,created_by,status,approved_at,approved_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)').run(book.id, date, parseInt(amount), category, description || '', receiptPath, source || 'manual', req.userId, status, approvedAt, approvedBy);
+    logActivity(req.userId, 'add_expense', `経費追加: ¥${amount} (${source || 'manual'})${!isOwner ? ' [承認待ち]' : ''}`);
+    res.json({ id: r.lastInsertRowid, success: true, status });
   } catch (err) { logError(err.message, '/api/expense', req.userId, err.stack); res.status(500).json({ error: err.message }); }
 });
 
@@ -620,15 +666,15 @@ router.get('/api/expenses', auth, (req, res) => {
   try {
     const book = bookAccess(req);
     if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
-    const { year, month, category } = req.query;
-    let sql = 'SELECT * FROM expenses WHERE book_id = ?';
+    const { year, month, category, include_pending } = req.query;
+    let sql = "SELECT e.*, u.name as creator_name FROM expenses e LEFT JOIN users u ON e.created_by = u.id WHERE e.book_id = ?";
     const params = [book.id];
-    // メンバーで全経費閲覧不可の場合は自分の入力分だけ
-    if (!book.can_view_all_expenses) { sql += ' AND (created_by = ? OR created_by IS NULL)'; params.push(req.userId); }
-    if (year) { sql += " AND strftime('%Y',date) = ?"; params.push(year); }
-    if (month) { sql += " AND strftime('%m',date) = ?"; params.push(month.padStart(2,'0')); }
-    if (category) { sql += " AND category = ?"; params.push(category); }
-    sql += ' ORDER BY date DESC, id DESC';
+    if (!include_pending) { sql += " AND (e.status = 'approved' OR e.status IS NULL)"; }
+    if (!book.can_view_all_expenses) { sql += ' AND (e.created_by = ? OR e.created_by IS NULL)'; params.push(req.userId); }
+    if (year) { sql += " AND strftime('%Y',e.date) = ?"; params.push(year); }
+    if (month) { sql += " AND strftime('%m',e.date) = ?"; params.push(month.padStart(2,'0')); }
+    if (category) { sql += " AND e.category = ?"; params.push(category); }
+    sql += ' ORDER BY e.date DESC, e.id DESC';
     res.json(db.prepare(sql).all(...params));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -636,19 +682,109 @@ router.get('/api/expenses', auth, (req, res) => {
 router.put('/api/expense/:id', auth, (req, res) => {
   try {
     const { date, amount, category, description } = req.body;
-    const exp = db.prepare('SELECT e.* FROM expenses e JOIN books b ON e.book_id=b.id WHERE e.id=? AND b.user_id=?').get(req.params.id, req.userId);
+    const exp = db.prepare('SELECT e.*, b.user_id as book_owner FROM expenses e JOIN books b ON e.book_id=b.id WHERE e.id=?').get(req.params.id);
     if (!exp) return res.status(404).json({ error: '見つかりません' });
-    db.prepare("UPDATE expenses SET date=?,amount=?,category=?,description=?,updated_at=datetime('now','localtime') WHERE id=?").run(date, parseInt(amount), category, description, exp.id);
+    if (exp.book_owner !== req.userId && exp.created_by !== req.userId) return res.status(403).json({ error: '編集権限がありません' });
+    const updates = [];
+    const params = [];
+    if (date !== undefined) { updates.push('date=?'); params.push(date); }
+    if (amount !== undefined) { updates.push('amount=?'); params.push(parseInt(amount)); }
+    if (category !== undefined) { updates.push('category=?'); params.push(category); }
+    if (description !== undefined) { updates.push('description=?'); params.push(description); }
+    updates.push("updated_at=datetime('now','localtime')");
+    params.push(exp.id);
+    db.prepare(`UPDATE expenses SET ${updates.join(',')} WHERE id=?`).run(...params);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 router.delete('/api/expense/:id', auth, (req, res) => {
   try {
-    const exp = db.prepare('SELECT e.* FROM expenses e JOIN books b ON e.book_id=b.id WHERE e.id=? AND b.user_id=?').get(req.params.id, req.userId);
+    const exp = db.prepare('SELECT e.*, b.user_id as book_owner FROM expenses e JOIN books b ON e.book_id=b.id WHERE e.id=?').get(req.params.id);
     if (!exp) return res.status(404).json({ error: '見つかりません' });
+    if (exp.book_owner !== req.userId && exp.created_by !== req.userId) return res.status(403).json({ error: '削除権限がありません' });
     if (exp.receipt_path) { const fp = path.join(__dirname, exp.receipt_path); if (fs.existsSync(fp)) fs.unlinkSync(fp); }
     db.prepare('DELETE FROM expenses WHERE id=?').run(exp.id);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// 経費の詳細（1件取得）
+router.get('/api/expense/:id', auth, (req, res) => {
+  try {
+    const exp = db.prepare("SELECT e.*, u.name as creator_name, u.email as creator_email, a.name as approver_name FROM expenses e LEFT JOIN users u ON e.created_by = u.id LEFT JOIN users a ON e.approved_by = a.id WHERE e.id=?").get(req.params.id);
+    if (!exp) return res.status(404).json({ error: '見つかりません' });
+    const book = bookAccess({ ...req, query: { bookId: exp.book_id }, body: {} });
+    if (!book) return res.status(403).json({ error: 'アクセス権がありません' });
+    res.json(exp);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// 承認待ちデータ取得（オーナー/管理者用）
+router.get('/api/pending', auth, (req, res) => {
+  try {
+    const book = bookAccess(req);
+    if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
+    if (book.memberRole !== 'owner' && book.memberRole !== 'manager') return res.status(403).json({ error: '権限がありません' });
+    const expenses = db.prepare("SELECT e.*, u.name as creator_name, u.email as creator_email FROM expenses e LEFT JOIN users u ON e.created_by = u.id WHERE e.book_id = ? AND e.status = 'pending' ORDER BY e.created_at DESC").all(book.id);
+    const income = db.prepare("SELECT i.*, u.name as creator_name, u.email as creator_email FROM income i LEFT JOIN users u ON i.created_by = u.id WHERE i.book_id = ? AND i.status = 'pending' ORDER BY i.created_at DESC").all(book.id);
+    res.json({ expenses, income, totalPending: expenses.length + income.length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// 承認
+router.put('/api/approve/:type/:id', auth, (req, res) => {
+  try {
+    const { type, id } = req.params;
+    if (!['expense', 'income'].includes(type)) return res.status(400).json({ error: '無効なタイプ' });
+    const table = type === 'expense' ? 'expenses' : 'income';
+    const item = db.prepare(`SELECT t.*, b.user_id as book_owner FROM ${table} t JOIN books b ON t.book_id=b.id WHERE t.id=?`).get(id);
+    if (!item) return res.status(404).json({ error: '見つかりません' });
+    if (item.book_owner !== req.userId) {
+      const isMgr = db.prepare("SELECT * FROM book_members WHERE book_id=? AND user_id=? AND role='manager'").get(item.book_id, req.userId);
+      if (!isMgr) return res.status(403).json({ error: '承認権限がありません' });
+    }
+    db.prepare(`UPDATE ${table} SET status='approved', approved_at=datetime('now','localtime'), approved_by=? WHERE id=?`).run(req.userId, item.id);
+    logActivity(req.userId, 'approve', `${type === 'expense' ? '経費' : '収入'}を承認: #${item.id} ¥${item.amount}`);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// 一括承認
+router.put('/api/approve-all', auth, (req, res) => {
+  try {
+    const { bookId } = req.body;
+    const book = db.prepare('SELECT * FROM books WHERE id=? AND user_id=?').get(parseInt(bookId), req.userId);
+    if (!book) {
+      const isMgr = db.prepare("SELECT * FROM book_members WHERE book_id=? AND user_id=? AND role='manager'").get(parseInt(bookId), req.userId);
+      if (!isMgr) return res.status(403).json({ error: '承認権限がありません' });
+    }
+    const now = "datetime('now','localtime')";
+    const expCount = db.prepare(`UPDATE expenses SET status='approved', approved_at=${now}, approved_by=? WHERE book_id=? AND status='pending'`).run(req.userId, parseInt(bookId)).changes;
+    const incCount = db.prepare(`UPDATE income SET status='approved', approved_at=${now}, approved_by=? WHERE book_id=? AND status='pending'`).run(req.userId, parseInt(bookId)).changes;
+    logActivity(req.userId, 'approve_all', `一括承認: 経費${expCount}件, 収入${incCount}件`);
+    res.json({ success: true, approved: expCount + incCount });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// 却下（削除）
+router.delete('/api/reject/:type/:id', auth, (req, res) => {
+  try {
+    const { type, id } = req.params;
+    if (!['expense', 'income'].includes(type)) return res.status(400).json({ error: '無効なタイプ' });
+    const table = type === 'expense' ? 'expenses' : 'income';
+    const item = db.prepare(`SELECT t.*, b.user_id as book_owner FROM ${table} t JOIN books b ON t.book_id=b.id WHERE t.id=?`).get(id);
+    if (!item) return res.status(404).json({ error: '見つかりません' });
+    if (item.book_owner !== req.userId) {
+      const isMgr = db.prepare("SELECT * FROM book_members WHERE book_id=? AND user_id=? AND role='manager'").get(item.book_id, req.userId);
+      if (!isMgr) return res.status(403).json({ error: '却下権限がありません' });
+    }
+    if (type === 'expense' && item.receipt_path) {
+      const fp = path.join(__dirname, item.receipt_path);
+      if (fs.existsSync(fp)) fs.unlinkSync(fp);
+    }
+    db.prepare(`DELETE FROM ${table} WHERE id=?`).run(item.id);
+    logActivity(req.userId, 'reject', `${type === 'expense' ? '経費' : '収入'}を却下: #${item.id} ¥${item.amount}`);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -665,13 +801,13 @@ router.get('/api/dashboard', auth, (req, res) => {
     const year = now.getFullYear().toString();
     const month = (now.getMonth()+1).toString().padStart(2,'0');
 
-    const mi = book.can_view_income ? db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM income WHERE book_id=? AND strftime('%Y',date)=? AND strftime('%m',date)=?").get(book.id,year,month) : {t:0};
-    const me = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND strftime('%Y',date)=? AND strftime('%m',date)=?").get(book.id,year,month);
-    const yi = book.can_view_income ? db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM income WHERE book_id=? AND strftime('%Y',date)=?").get(book.id,year) : {t:0};
-    const ye = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND strftime('%Y',date)=?").get(book.id,year);
+    const mi = book.can_view_income ? db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM income WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=? AND strftime('%m',date)=?").get(book.id,year,month) : {t:0};
+    const me = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=? AND strftime('%m',date)=?").get(book.id,year,month);
+    const yi = book.can_view_income ? db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM income WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=?").get(book.id,year) : {t:0};
+    const ye = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=?").get(book.id,year);
 
-    const ri = book.can_view_income ? db.prepare("SELECT id,date,amount,type as category,description,'income' as kind FROM income WHERE book_id=? ORDER BY date DESC,id DESC LIMIT 10").all(book.id) : [];
-    let expSql = "SELECT id,date,amount,category,description,'expense' as kind FROM expenses WHERE book_id=?";
+    const ri = book.can_view_income ? db.prepare("SELECT id,date,amount,type as category,description,'income' as kind,status,created_by FROM income WHERE book_id=? AND (status='approved' OR status IS NULL) ORDER BY date DESC,id DESC LIMIT 10").all(book.id) : [];
+    let expSql = "SELECT id,date,amount,category,description,'expense' as kind,status,created_by FROM expenses WHERE book_id=? AND (status='approved' OR status IS NULL)";
     const expParams = [book.id];
     if (!book.can_view_all_expenses) { expSql += ' AND (created_by = ? OR created_by IS NULL)'; expParams.push(req.userId); }
     expSql += ' ORDER BY date DESC,id DESC LIMIT 10';
@@ -689,7 +825,15 @@ router.get('/api/dashboard', auth, (req, res) => {
       LEFT JOIN (SELECT strftime('%m',date) as month,SUM(amount) as total FROM expenses WHERE book_id=? AND strftime('%Y',date)=? GROUP BY strftime('%m',date)) e ON m.month=e.month ORDER BY m.month
     `).all(book.id,year,book.id,year);
 
-    res.json({ monthIncome:mi.t, monthExpense:me.t, yearIncome:yi.t, yearExpense:ye.t, yearProfit:yi.t-ye.t, recentTransactions:recent, categoryBreakdown:catBreak, monthlyTrend:trend });
+    // 承認待ちカウント（オーナー/管理者のみ）
+    let pendingCount = 0;
+    if (book.memberRole === 'owner' || book.memberRole === 'manager') {
+      const pe = db.prepare("SELECT COUNT(*) as c FROM expenses WHERE book_id=? AND status='pending'").get(book.id).c;
+      const pi = db.prepare("SELECT COUNT(*) as c FROM income WHERE book_id=? AND status='pending'").get(book.id).c;
+      pendingCount = pe + pi;
+    }
+
+    res.json({ monthIncome:mi.t, monthExpense:me.t, yearIncome:yi.t, yearExpense:ye.t, yearProfit:yi.t-ye.t, recentTransactions:recent, categoryBreakdown:catBreak, monthlyTrend:trend, pendingCount });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -698,11 +842,12 @@ router.get('/api/summary/:year', auth, (req, res) => {
     const book = bookAccess(req);
     if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
     const year = req.params.year;
-    const inc = db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM income WHERE book_id=? AND strftime('%Y',date)=?").get(book.id,year);
-    const exp = db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM expenses WHERE book_id=? AND strftime('%Y',date)=?").get(book.id,year);
-    const breakdown = db.prepare("SELECT category,SUM(amount) as total,COUNT(*) as count FROM expenses WHERE book_id=? AND strftime('%Y',date)=? GROUP BY category ORDER BY total DESC").all(book.id,year);
-    const mi = db.prepare("SELECT strftime('%m',date) as month,SUM(amount) as total FROM income WHERE book_id=? AND strftime('%Y',date)=? GROUP BY strftime('%m',date)").all(book.id,year);
-    const me2 = db.prepare("SELECT strftime('%m',date) as month,SUM(amount) as total FROM expenses WHERE book_id=? AND strftime('%Y',date)=? GROUP BY strftime('%m',date)").all(book.id,year);
+    const approvedFilter = "AND (status='approved' OR status IS NULL)";
+    const inc = db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM income WHERE book_id=? ${approvedFilter} AND strftime('%Y',date)=?`).get(book.id,year);
+    const exp = db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM expenses WHERE book_id=? ${approvedFilter} AND strftime('%Y',date)=?`).get(book.id,year);
+    const breakdown = db.prepare(`SELECT category,SUM(amount) as total,COUNT(*) as count FROM expenses WHERE book_id=? ${approvedFilter} AND strftime('%Y',date)=? GROUP BY category ORDER BY total DESC`).all(book.id,year);
+    const mi = db.prepare(`SELECT strftime('%m',date) as month,SUM(amount) as total FROM income WHERE book_id=? ${approvedFilter} AND strftime('%Y',date)=? GROUP BY strftime('%m',date)`).all(book.id,year);
+    const me2 = db.prepare(`SELECT strftime('%m',date) as month,SUM(amount) as total FROM expenses WHERE book_id=? ${approvedFilter} AND strftime('%Y',date)=? GROUP BY strftime('%m',date)`).all(book.id,year);
     res.json({ year, income:inc.total, expenses:exp.total, profit:inc.total-exp.total, breakdown, monthlyIncome:mi, monthlyExpense:me2 });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -798,14 +943,14 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
     if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
     const year = req.params.year;
 
-    // 収入（区分別）
-    const incomeByType = db.prepare("SELECT COALESCE(income_type,'business') as income_type, SUM(amount) as total FROM income WHERE book_id=? AND strftime('%Y',date)=? GROUP BY income_type").all(book.id, year);
+    // 収入（区分別、承認済みのみ）
+    const incomeByType = db.prepare("SELECT COALESCE(income_type,'business') as income_type, SUM(amount) as total FROM income WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=? GROUP BY income_type").all(book.id, year);
     const totalIncome = incomeByType.reduce((s, r) => s + r.total, 0);
     const businessIncome = incomeByType.find(r => r.income_type === 'business')?.total || 0;
     const separateIncome = incomeByType.find(r => r.income_type === 'fx_stock')?.total || 0;
 
-    // 経費
-    const totalExpenses = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND strftime('%Y',date)=?").get(book.id, year).t;
+    // 経費（承認済みのみ）
+    const totalExpenses = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=?").get(book.id, year).t;
 
     // 減価償却
     const deps = db.prepare('SELECT * FROM depreciations WHERE book_id=?').all(book.id);
@@ -817,9 +962,9 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
       return { ...d, yearAmount: amt, remainingMonths: remaining.months, depreciatedPercent: remaining.percent };
     });
 
-    // 経費カテゴリから自動検出される控除
-    const medicalExpenses = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND strftime('%Y',date)=? AND category='medical'").get(book.id, year).t;
-    const insuranceExpenses = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND strftime('%Y',date)=? AND category='insurance'").get(book.id, year).t;
+    // 経費カテゴリから自動検出される控除（承認済みのみ）
+    const medicalExpenses = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=? AND category='medical'").get(book.id, year).t;
+    const insuranceExpenses = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=? AND category='insurance'").get(book.id, year).t;
 
     // 控除
     const deductions = db.prepare('SELECT * FROM deductions WHERE book_id=? AND year=?').all(book.id, year);
@@ -1012,10 +1157,11 @@ router.post('/api/import-csv', auth, (req, res) => {
     const { bookId, rows } = req.body;
     const book = db.prepare('SELECT * FROM books WHERE id=? AND user_id=?').get(parseInt(bookId), req.userId);
     if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
-    const stmt = db.prepare('INSERT INTO expenses (book_id,date,amount,category,description,source) VALUES (?,?,?,?,?,?)');
+    const stmt = db.prepare('INSERT INTO expenses (book_id,date,amount,category,description,source,created_by,status,approved_at,approved_by) VALUES (?,?,?,?,?,?,?,?,?,?)');
+    const approvedAt = new Date().toISOString();
     const tx = db.transaction((items) => {
       let c = 0;
-      for (const i of items) { if (i.date && i.amount > 0) { stmt.run(book.id, i.date, Math.abs(i.amount), i.category||'misc', i.description||'', 'csv'); c++; } }
+      for (const i of items) { if (i.date && i.amount > 0) { stmt.run(book.id, i.date, Math.abs(i.amount), i.category||'misc', i.description||'', 'csv', req.userId, 'approved', approvedAt, req.userId); c++; } }
       return c;
     });
     const count = tx(rows);
