@@ -226,18 +226,73 @@ body { min-height: 100dvh; }
   background: var(--card); font-size: 14px; font-weight: 600; font-family: var(--font); color: var(--text);
 }
 
-.report-summary {
-  background: var(--card); border-radius: var(--radius); padding: 20px;
+/* 税額ヒーロー */
+.tax-hero {
+  text-align: center; padding: 28px 20px; margin-bottom: 16px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6); border-radius: var(--radius);
+  color: #fff; box-shadow: 0 4px 20px rgba(99,102,241,.3);
+}
+.tax-hero-label { font-size: 12px; opacity: .8; margin-bottom: 4px; }
+.tax-hero-val { font-size: 36px; font-weight: 900; letter-spacing: -1px; }
+.tax-hero-rate { font-size: 13px; margin-top: 6px; opacity: .85; }
+
+/* 所得フロー */
+.tax-flow {
+  background: var(--card); border-radius: var(--radius); padding: 16px 20px;
   box-shadow: var(--shadow); margin-bottom: 16px;
 }
+.tf-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 14px; }
+.tf-row.bold { font-weight: 700; font-size: 15px; }
+.tf-val { font-weight: 700; }
+.tf-val.income { color: var(--green); }
+.tf-val.expense { color: var(--red); }
+.tf-val.primary { color: var(--pri); }
+.tf-op { text-align: center; font-size: 12px; color: var(--text3); padding: 2px 0; }
+.tf-eq { height: 1px; background: var(--border); margin: 2px 0; }
+.tf-eq.thick { height: 2px; background: var(--text); margin: 4px 0; }
+
+/* 税額内訳 */
+.tax-bd-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 13px; border-bottom: 1px solid var(--border); }
+.tax-bd-row:last-child { border-bottom: none; }
+.tax-bd-row.total { font-weight: 700; font-size: 14px; border-top: 2px solid var(--text); padding-top: 10px; }
+.tax-bd-label { color: var(--text2); }
+.tax-bd-val { font-weight: 600; }
+
+/* 節税ヒント */
+.tax-tip {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin-bottom: 8px;
+  background: var(--bg); border-radius: var(--radius-sm); border-left: 3px solid var(--green);
+}
+.tax-tip:last-child { margin-bottom: 0; }
+.tax-tip-expense { font-size: 13px; font-weight: 600; min-width: 70px; }
+.tax-tip-arrow { color: var(--text3); flex-shrink: 0; }
+.tax-tip-saving { font-size: 13px; font-weight: 700; color: var(--green); }
+.tax-tip-desc { font-size: 11px; color: var(--text3); }
+.tax-bracket-hint {
+  padding: 12px; margin-top: 10px; background: #fffbeb; border: 1px solid #fde68a;
+  border-radius: var(--radius-sm); font-size: 12px; color: #92400e; line-height: 1.6;
+}
+
+/* 控除・減価償却リスト */
+.ded-item, .dep-item {
+  display: flex; justify-content: space-between; align-items: center; padding: 8px 0;
+  border-bottom: 1px solid var(--border); font-size: 13px;
+}
+.ded-item:last-child, .dep-item:last-child { border-bottom: none; }
+.ded-info, .dep-info { flex: 1; }
+.ded-name, .dep-name { font-weight: 600; }
+.ded-type, .dep-detail { font-size: 11px; color: var(--text3); }
+.ded-amount, .dep-amount { font-weight: 700; margin: 0 8px; }
+.ded-del, .dep-del {
+  width: 24px; height: 24px; border: none; background: #fee2e2; color: var(--red);
+  border-radius: 6px; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.ded-empty, .dep-empty { text-align: center; padding: 12px; color: var(--text3); font-size: 12px; }
+
+/* (keep old classes for backwards compat) */
+.report-summary { display: none; }
 .rpt-row { display: flex; justify-content: space-between; padding: 10px 0; }
-.rpt-row.bold { font-weight: 700; font-size: 16px; }
 .rpt-val { font-weight: 700; }
-.rpt-val.income { color: var(--green); }
-.rpt-val.expense { color: var(--red); }
-.rpt-val.primary { color: var(--pri); }
-.rpt-div { height: 1px; background: var(--border); }
-.rpt-div.thick { height: 2px; background: var(--text); }
 
 .card {
   background: var(--card); border-radius: var(--radius); padding: 20px;

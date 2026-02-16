@@ -53,6 +53,7 @@ try {
 try { db.exec("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'"); } catch (e) {}
 try { db.exec("ALTER TABLE users ADD COLUMN plan TEXT DEFAULT 'free'"); } catch (e) {}
 try { db.exec("ALTER TABLE expenses ADD COLUMN created_by INTEGER"); } catch (e) {}
+try { db.exec("ALTER TABLE income ADD COLUMN income_type TEXT DEFAULT 'business'"); } catch (e) {}
 
 // === テーブル作成 ===
 db.exec(`
@@ -87,6 +88,7 @@ db.exec(`
     date TEXT NOT NULL,
     amount INTEGER NOT NULL,
     type TEXT NOT NULL DEFAULT '振込',
+    income_type TEXT DEFAULT 'business',
     description TEXT,
     created_at TEXT DEFAULT (datetime('now','localtime')),
     updated_at TEXT DEFAULT (datetime('now','localtime')),
@@ -119,6 +121,28 @@ db.exec(`
     FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     UNIQUE(book_id, user_id)
+  );
+  CREATE TABLE IF NOT EXISTS deductions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    book_id INTEGER NOT NULL,
+    year TEXT NOT NULL,
+    type TEXT NOT NULL,
+    name TEXT,
+    amount INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+  );
+  CREATE TABLE IF NOT EXISTS depreciations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    book_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    purchase_date TEXT NOT NULL,
+    purchase_amount INTEGER NOT NULL,
+    useful_life INTEGER NOT NULL DEFAULT 4,
+    method TEXT DEFAULT 'straight',
+    memo TEXT,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
   );
 `);
 
@@ -516,12 +540,12 @@ router.delete('/api/books/:id/members/:memberId', auth, (req, res) => {
 
 router.post('/api/income', auth, (req, res) => {
   try {
-    const { bookId, date, amount, type, description } = req.body;
+    const { bookId, date, amount, type, income_type, description } = req.body;
     const book = bookAccess(req);
     if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
     if (!book.can_input_income) return res.status(403).json({ error: '収入の入力権限がありません' });
     if (!date || !amount) return res.status(400).json({ error: '日付と金額は必須' });
-    const r = db.prepare('INSERT INTO income (book_id, date, amount, type, description) VALUES (?,?,?,?,?)').run(book.id, date, parseInt(amount), type || '振込', description || '');
+    const r = db.prepare('INSERT INTO income (book_id, date, amount, type, income_type, description) VALUES (?,?,?,?,?,?)').run(book.id, date, parseInt(amount), type || '振込', income_type || 'business', description || '');
     logActivity(req.userId, 'add_income', `収入追加: ¥${amount}`);
     res.json({ id: r.lastInsertRowid, success: true });
   } catch (err) { logError(err.message, '/api/income', req.userId, err.stack); res.status(500).json({ error: err.message }); }
@@ -667,6 +691,213 @@ router.get('/api/summary/:year', auth, (req, res) => {
     const mi = db.prepare("SELECT strftime('%m',date) as month,SUM(amount) as total FROM income WHERE book_id=? AND strftime('%Y',date)=? GROUP BY strftime('%m',date)").all(book.id,year);
     const me2 = db.prepare("SELECT strftime('%m',date) as month,SUM(amount) as total FROM expenses WHERE book_id=? AND strftime('%Y',date)=? GROUP BY strftime('%m',date)").all(book.id,year);
     res.json({ year, income:inc.total, expenses:exp.total, profit:inc.total-exp.total, breakdown, monthlyIncome:mi, monthlyExpense:me2 });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ========================================
+// 税額計算エンジン
+// ========================================
+
+// 所得税率テーブル（2024年〜）
+const INCOME_TAX_BRACKETS = [
+  { limit: 1950000, rate: 0.05, deduction: 0 },
+  { limit: 3300000, rate: 0.10, deduction: 97500 },
+  { limit: 6950000, rate: 0.20, deduction: 427500 },
+  { limit: 9000000, rate: 0.23, deduction: 636000 },
+  { limit: 18000000, rate: 0.33, deduction: 1536000 },
+  { limit: 40000000, rate: 0.40, deduction: 2796000 },
+  { limit: Infinity, rate: 0.45, deduction: 4796000 }
+];
+
+function calcIncomeTax(taxableIncome) {
+  if (taxableIncome <= 0) return 0;
+  for (const b of INCOME_TAX_BRACKETS) {
+    if (taxableIncome <= b.limit) return Math.floor(taxableIncome * b.rate - b.deduction);
+  }
+  return 0;
+}
+
+function calcResidentTax(taxableIncome) {
+  if (taxableIncome <= 0) return 0;
+  return Math.floor(taxableIncome * 0.10) + 5000;
+}
+
+function calcDepreciationForYear(dep, year) {
+  const purchaseYear = parseInt(dep.purchase_date.slice(0, 4));
+  const purchaseMonth = parseInt(dep.purchase_date.slice(5, 7));
+  const y = parseInt(year);
+  if (y < purchaseYear) return 0;
+  const life = dep.useful_life;
+  const yearlyAmount = Math.floor(dep.purchase_amount / life);
+  const elapsed = y - purchaseYear;
+  if (elapsed >= life) return 0;
+  if (elapsed === 0) {
+    const months = 12 - purchaseMonth + 1;
+    return Math.floor(yearlyAmount * months / 12);
+  }
+  return yearlyAmount;
+}
+
+// 所得区分別ラベル
+const INCOME_TYPE_LABELS = {
+  business: '事業所得', salary: '給与所得', fx_stock: '株・FX（分離課税）',
+  real_estate: '不動産所得', misc: 'その他の所得'
+};
+
+// 控除タイプ別ラベル
+const DEDUCTION_LABELS = {
+  blue_return: '青色申告特別控除', basic: '基礎控除', medical: '医療費控除',
+  social_insurance: '社会保険料控除', spouse: '配偶者控除', dependent: '扶養控除',
+  life_insurance: '生命保険料控除', earthquake: '地震保険料控除',
+  small_business: '小規模企業共済等掛金控除', hometown_tax: 'ふるさと納税', other: 'その他控除'
+};
+
+// 税額シミュレーション
+router.get('/api/tax-simulation/:year', auth, (req, res) => {
+  try {
+    const book = bookAccess(req);
+    if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
+    const year = req.params.year;
+
+    // 収入（区分別）
+    const incomeByType = db.prepare("SELECT COALESCE(income_type,'business') as income_type, SUM(amount) as total FROM income WHERE book_id=? AND strftime('%Y',date)=? GROUP BY income_type").all(book.id, year);
+    const totalIncome = incomeByType.reduce((s, r) => s + r.total, 0);
+    const businessIncome = incomeByType.find(r => r.income_type === 'business')?.total || 0;
+    const separateIncome = incomeByType.find(r => r.income_type === 'fx_stock')?.total || 0;
+
+    // 経費
+    const totalExpenses = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND strftime('%Y',date)=?").get(book.id, year).t;
+
+    // 減価償却
+    const deps = db.prepare('SELECT * FROM depreciations WHERE book_id=?').all(book.id);
+    let totalDepreciation = 0;
+    const depDetails = deps.map(d => {
+      const amt = calcDepreciationForYear(d, year);
+      totalDepreciation += amt;
+      return { ...d, yearAmount: amt };
+    }).filter(d => d.yearAmount > 0);
+
+    // 控除
+    const deductions = db.prepare('SELECT * FROM deductions WHERE book_id=? AND year=?').all(book.id, year);
+    let totalDeductions = 0;
+    const hasBlue = deductions.some(d => d.type === 'blue_return');
+    const hasBasic = deductions.some(d => d.type === 'basic');
+    const deductionList = [];
+    if (!hasBasic) deductionList.push({ type: 'basic', name: '基礎控除', amount: 480000, auto: true });
+    deductions.forEach(d => { deductionList.push({ ...d, auto: false }); });
+    totalDeductions = deductionList.reduce((s, d) => s + d.amount, 0);
+
+    // 課税所得（総合課税分）
+    const comprehensiveIncome = totalIncome - separateIncome;
+    const netBusinessIncome = Math.max(0, comprehensiveIncome - totalExpenses - totalDepreciation);
+    const taxableIncome = Math.max(0, netBusinessIncome - totalDeductions);
+
+    // 税額計算
+    const incomeTax = calcIncomeTax(taxableIncome);
+    const reconstructionTax = Math.floor(incomeTax * 0.021);
+    const residentTax = calcResidentTax(taxableIncome);
+    const separateTax = separateIncome > 0 ? Math.floor(separateIncome * 0.20315) : 0;
+    const totalTax = incomeTax + reconstructionTax + residentTax + separateTax;
+
+    // 現在の税率帯
+    let currentBracket = INCOME_TAX_BRACKETS[0];
+    for (const b of INCOME_TAX_BRACKETS) { if (taxableIncome <= b.limit) { currentBracket = b; break; } }
+
+    // 「あといくら経費を使えばいくら下がるか」提案
+    const tips = [];
+    if (taxableIncome > 0) {
+      const amounts = [50000, 100000, 200000, 500000];
+      for (const extra of amounts) {
+        const newTaxable = Math.max(0, taxableIncome - extra);
+        const newIncomeTax = calcIncomeTax(newTaxable);
+        const newRecon = Math.floor(newIncomeTax * 0.021);
+        const newResident = calcResidentTax(newTaxable);
+        const newTotal = newIncomeTax + newRecon + newResident + separateTax;
+        const saving = totalTax - newTotal;
+        if (saving > 0) tips.push({ extraExpense: extra, saving, newTotalTax: newTotal });
+      }
+    }
+
+    // 次の税率帯までの距離
+    let nextBracketInfo = null;
+    for (let i = INCOME_TAX_BRACKETS.length - 1; i >= 0; i--) {
+      if (taxableIncome > INCOME_TAX_BRACKETS[i].limit) {
+        const overAmount = taxableIncome - INCOME_TAX_BRACKETS[i].limit;
+        nextBracketInfo = { currentRate: INCOME_TAX_BRACKETS[i + 1]?.rate || currentBracket.rate, lowerRate: INCOME_TAX_BRACKETS[i].rate, expenseNeeded: overAmount };
+        break;
+      }
+    }
+
+    res.json({
+      year,
+      incomeByType: incomeByType.map(r => ({ ...r, label: INCOME_TYPE_LABELS[r.income_type] || r.income_type })),
+      totalIncome, totalExpenses, totalDepreciation, totalDeductions,
+      depreciationDetails: depDetails,
+      deductions: deductionList.map(d => ({ ...d, label: DEDUCTION_LABELS[d.type] || d.name || d.type })),
+      netBusinessIncome, taxableIncome,
+      tax: { incomeTax, reconstructionTax, residentTax, separateTax, totalTax },
+      currentBracket: { rate: currentBracket.rate, ratePercent: Math.round(currentBracket.rate * 100) },
+      tips, nextBracketInfo,
+      labels: { incomeTypes: INCOME_TYPE_LABELS, deductionTypes: DEDUCTION_LABELS }
+    });
+  } catch (err) { logError(err.message, '/api/tax-simulation', req.userId, err.stack); res.status(500).json({ error: err.message }); }
+});
+
+// 控除 CRUD
+router.get('/api/deductions/:year', auth, (req, res) => {
+  try {
+    const book = bookAccess(req);
+    if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
+    res.json(db.prepare('SELECT * FROM deductions WHERE book_id=? AND year=? ORDER BY id').all(book.id, req.params.year));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/api/deductions', auth, (req, res) => {
+  try {
+    const { bookId, year, type, name, amount } = req.body;
+    const book = bookAccess(req);
+    if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
+    const r = db.prepare('INSERT INTO deductions (book_id,year,type,name,amount) VALUES (?,?,?,?,?)').run(book.id, year, type, name || '', parseInt(amount) || 0);
+    res.json({ id: r.lastInsertRowid, success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/api/deductions/:id', auth, (req, res) => {
+  try {
+    const d = db.prepare('SELECT d.* FROM deductions d JOIN books b ON d.book_id=b.id WHERE d.id=? AND b.user_id=?').get(req.params.id, req.userId);
+    if (!d) return res.status(404).json({ error: '見つかりません' });
+    db.prepare('DELETE FROM deductions WHERE id=?').run(d.id);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// 減価償却 CRUD
+router.get('/api/depreciations', auth, (req, res) => {
+  try {
+    const book = bookAccess(req);
+    if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
+    res.json(db.prepare('SELECT * FROM depreciations WHERE book_id=? ORDER BY purchase_date DESC').all(book.id));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/api/depreciations', auth, (req, res) => {
+  try {
+    const { bookId, name, purchase_date, purchase_amount, useful_life, method, memo } = req.body;
+    const book = bookAccess(req);
+    if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
+    const r = db.prepare('INSERT INTO depreciations (book_id,name,purchase_date,purchase_amount,useful_life,method,memo) VALUES (?,?,?,?,?,?,?)').run(
+      book.id, name, purchase_date, parseInt(purchase_amount), parseInt(useful_life) || 4, method || 'straight', memo || ''
+    );
+    res.json({ id: r.lastInsertRowid, success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/api/depreciations/:id', auth, (req, res) => {
+  try {
+    const d = db.prepare('SELECT d.* FROM depreciations d JOIN books b ON d.book_id=b.id WHERE d.id=? AND b.user_id=?').get(req.params.id, req.userId);
+    if (!d) return res.status(404).json({ error: '見つかりません' });
+    db.prepare('DELETE FROM depreciations WHERE id=?').run(d.id);
+    res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

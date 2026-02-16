@@ -552,26 +552,167 @@ const App = {
       navigator.clipboard.writeText(qs('#ai-output').value);
       this.toast('コピーしました', 'success');
     });
+
+    // 控除追加
+    qs('#btn-add-deduction').addEventListener('click', () => {
+      const types = [
+        ['blue_return', '青色申告特別控除（65万円）', 650000],
+        ['medical', '医療費控除', 0],
+        ['social_insurance', '社会保険料控除', 0],
+        ['spouse', '配偶者控除（38万円）', 380000],
+        ['dependent', '扶養控除', 0],
+        ['life_insurance', '生命保険料控除', 0],
+        ['earthquake', '地震保険料控除', 0],
+        ['small_business', '小規模企業共済等掛金控除', 0],
+        ['hometown_tax', 'ふるさと納税', 0],
+        ['other', 'その他']
+      ];
+      const typeStr = types.map((t, i) => `${i+1}. ${t[1]}`).join('\n');
+      const choice = prompt(`控除の種類を番号で選んでください:\n\n${typeStr}`);
+      if (!choice) return;
+      const idx = parseInt(choice) - 1;
+      if (idx < 0 || idx >= types.length) { this.toast('無効な選択です', 'error'); return; }
+      const [type, label, defaultAmt] = types[idx];
+      const amtStr = prompt(`${label}\n金額を入力してください（円）:`, defaultAmt || '');
+      if (!amtStr) return;
+      const amount = parseInt(amtStr.replace(/[^0-9]/g, ''));
+      if (!amount || amount <= 0) { this.toast('金額が無効です', 'error'); return; }
+      this.api('/api/deductions', { method: 'POST', body: JSON.stringify({
+        bookId: this.currentBook.id, year: qs('#report-year').value, type, name: label, amount
+      })}).then(() => { this.toast('控除を追加しました', 'success'); this.loadReport(); })
+        .catch(err => this.toast(err.message, 'error'));
+    });
+
+    // 減価償却追加
+    qs('#btn-add-depreciation').addEventListener('click', () => {
+      const name = prompt('資産名を入力してください:\n（例: MacBook Pro, 業務用車両）');
+      if (!name) return;
+      const purchaseDate = prompt('取得日（YYYY-MM-DD）:', new Date().toISOString().slice(0, 10));
+      if (!purchaseDate) return;
+      const amtStr = prompt('取得価格（円）:');
+      if (!amtStr) return;
+      const amount = parseInt(amtStr.replace(/[^0-9]/g, ''));
+      if (!amount) { this.toast('金額が無効です', 'error'); return; }
+      const lifeStr = prompt('耐用年数（年）:\n\nPC: 4年, 車両: 6年, 家具: 8年, 建物: 22-47年', '4');
+      if (!lifeStr) return;
+      const life = parseInt(lifeStr);
+      this.api('/api/depreciations', { method: 'POST', body: JSON.stringify({
+        bookId: this.currentBook.id, name, purchase_date: purchaseDate, purchase_amount: amount, useful_life: life
+      })}).then(() => { this.toast('減価償却資産を追加しました', 'success'); this.loadReport(); })
+        .catch(err => this.toast(err.message, 'error'));
+    });
   },
 
   async loadReport() {
     if (!this.currentBook) return;
     const y = qs('#report-year').value;
     try {
+      // サマリー（経費内訳・月別推移用）
       const d = await this.api(`/api/summary/${y}?bookId=${this.currentBook.id}`);
-      qs('#rpt-income').textContent = `¥${d.income.toLocaleString()}`;
-      qs('#rpt-expense').textContent = `¥${d.expenses.toLocaleString()}`;
-      qs('#rpt-taxable').textContent = `¥${Math.max(0, d.profit - 650000).toLocaleString()}`;
-
       const bdWrap = qs('#rpt-breakdown');
       const maxBd = d.breakdown.length ? d.breakdown[0].total : 1;
       bdWrap.innerHTML = d.breakdown.map(b => `
         <div class="bd-item"><div class="bd-head"><span class="bd-name">${this.categoryIcon(b.category)} ${this.categoryName(b.category)}</span><span class="bd-val">¥${b.total.toLocaleString()} (${b.count}件)</span></div>
         <div class="bd-bar"><div class="bd-fill" style="width:${(b.total/maxBd*100).toFixed(1)}%"></div></div></div>
       `).join('');
-
       this.renderReportChart(d);
+
+      // 税額シミュレーション
+      const t = await this.api(`/api/tax-simulation/${y}?bookId=${this.currentBook.id}`);
+      this._taxData = t;
+
+      // ヒーロー
+      qs('#tax-total').textContent = `¥${t.tax.totalTax.toLocaleString()}`;
+      qs('#tax-rate').textContent = t.currentBracket.ratePercent;
+
+      // フロー
+      qs('#rpt-income').textContent = `¥${t.totalIncome.toLocaleString()}`;
+      qs('#rpt-expense').textContent = `¥${t.totalExpenses.toLocaleString()}`;
+      qs('#rpt-depreciation').textContent = `¥${t.totalDepreciation.toLocaleString()}`;
+      qs('#rpt-net-income').textContent = `¥${t.netBusinessIncome.toLocaleString()}`;
+      qs('#rpt-deductions').textContent = `¥${t.totalDeductions.toLocaleString()}`;
+      qs('#rpt-taxable').textContent = `¥${t.taxableIncome.toLocaleString()}`;
+
+      // 税額内訳
+      qs('#tax-breakdown').innerHTML = `
+        <div class="tax-bd-row"><span class="tax-bd-label">所得税</span><span class="tax-bd-val">¥${t.tax.incomeTax.toLocaleString()}</span></div>
+        <div class="tax-bd-row"><span class="tax-bd-label">復興特別所得税</span><span class="tax-bd-val">¥${t.tax.reconstructionTax.toLocaleString()}</span></div>
+        <div class="tax-bd-row"><span class="tax-bd-label">住民税</span><span class="tax-bd-val">¥${t.tax.residentTax.toLocaleString()}</span></div>
+        ${t.tax.separateTax > 0 ? `<div class="tax-bd-row"><span class="tax-bd-label">分離課税（株・FX）</span><span class="tax-bd-val">¥${t.tax.separateTax.toLocaleString()}</span></div>` : ''}
+        <div class="tax-bd-row total"><span>合計</span><span class="tax-bd-val">¥${t.tax.totalTax.toLocaleString()}</span></div>
+      `;
+
+      // 節税ヒント
+      if (t.tips.length > 0 || t.nextBracketInfo) {
+        qs('#tax-tips-card').style.display = '';
+        let tipsHtml = t.tips.map(tip => `
+          <div class="tax-tip">
+            <span class="tax-tip-expense">あと¥${tip.extraExpense.toLocaleString()}</span>
+            <span class="tax-tip-arrow">→</span>
+            <span class="tax-tip-saving">¥${tip.saving.toLocaleString()} 節税</span>
+          </div>`).join('');
+        if (t.nextBracketInfo) {
+          tipsHtml += `<div class="tax-bracket-hint">あと <strong>¥${t.nextBracketInfo.expenseNeeded.toLocaleString()}</strong> の経費で税率が <strong>${Math.round(t.nextBracketInfo.currentRate * 100)}%</strong> → <strong>${Math.round(t.nextBracketInfo.lowerRate * 100)}%</strong> に下がります</div>`;
+        }
+        qs('#tax-tips').innerHTML = tipsHtml;
+      } else {
+        qs('#tax-tips-card').style.display = 'none';
+      }
+
+      // 控除一覧
+      this.renderDeductions(t.deductions, y);
+      // 減価償却一覧
+      this.renderDepreciations(t.depreciationDetails, y);
     } catch (err) { this.toast(err.message, 'error'); }
+  },
+
+  renderDeductions(deductions, year) {
+    const wrap = qs('#deduction-list');
+    if (deductions.length === 0) {
+      wrap.innerHTML = '<div class="ded-empty">基礎控除（48万円）は自動適用されます</div>';
+    } else {
+      wrap.innerHTML = deductions.map(d => `
+        <div class="ded-item">
+          <div class="ded-info"><div class="ded-name">${this.esc(d.label || d.name)}</div><div class="ded-type">${d.auto ? '自動' : ''}</div></div>
+          <span class="ded-amount">¥${d.amount.toLocaleString()}</span>
+          ${d.auto ? '' : `<button class="ded-del" data-id="${d.id}">✕</button>`}
+        </div>`).join('');
+      wrap.querySelectorAll('.ded-del').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('この控除を削除しますか？')) return;
+          try {
+            await this.api(`/api/deductions/${btn.dataset.id}`, { method: 'DELETE' });
+            this.loadReport();
+          } catch (err) { this.toast(err.message, 'error'); }
+        });
+      });
+    }
+  },
+
+  renderDepreciations(deps) {
+    const wrap = qs('#depreciation-list');
+    if (deps.length === 0) {
+      wrap.innerHTML = '<div class="dep-empty">減価償却資産はありません</div>';
+    } else {
+      wrap.innerHTML = deps.map(d => `
+        <div class="dep-item">
+          <div class="dep-info">
+            <div class="dep-name">${this.esc(d.name)}</div>
+            <div class="dep-detail">取得: ¥${d.purchase_amount.toLocaleString()} ・ ${d.useful_life}年償却 ・ ${d.purchase_date}</div>
+          </div>
+          <span class="dep-amount">¥${d.yearAmount.toLocaleString()}/年</span>
+          <button class="dep-del" data-id="${d.id}">✕</button>
+        </div>`).join('');
+      wrap.querySelectorAll('.dep-del').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('この資産を削除しますか？')) return;
+          try {
+            await this.api(`/api/depreciations/${btn.dataset.id}`, { method: 'DELETE' });
+            this.loadReport();
+          } catch (err) { this.toast(err.message, 'error'); }
+        });
+      });
+    }
   },
 
   renderReportChart(d) {
@@ -1399,6 +1540,7 @@ const App = {
             date: qs('#inc-date').value,
             amount: qs('#inc-amount').value,
             type: qs('#inc-type').value,
+            income_type: qs('#inc-income-type').value,
             description: qs('#inc-desc').value
           })
         });

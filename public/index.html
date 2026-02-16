@@ -116,17 +116,62 @@
           <h1>レポート</h1>
           <select id="report-year" class="sel-year"></select>
         </div>
-        <div class="report-summary">
-          <div class="rpt-row"><span>総収入</span><span class="rpt-val income" id="rpt-income">¥0</span></div>
-          <div class="rpt-div"></div>
-          <div class="rpt-row"><span>総経費</span><span class="rpt-val expense" id="rpt-expense">¥0</span></div>
-          <div class="rpt-div"></div>
-          <div class="rpt-row"><span>青色控除</span><span class="rpt-val">¥650,000</span></div>
-          <div class="rpt-div thick"></div>
-          <div class="rpt-row bold"><span>課税所得</span><span class="rpt-val primary" id="rpt-taxable">¥0</span></div>
+
+        <!-- 税額サマリー（大きく表示） -->
+        <div class="tax-hero" id="tax-hero">
+          <div class="tax-hero-label">あなたの税金（推定）</div>
+          <div class="tax-hero-val" id="tax-total">¥0</div>
+          <div class="tax-hero-rate">所得税率 <span id="tax-rate">5</span>%</div>
         </div>
+
+        <!-- 所得の内訳 -->
+        <div class="tax-flow">
+          <div class="tf-row"><span>総収入</span><span class="tf-val income" id="rpt-income">¥0</span></div>
+          <div class="tf-op">−</div>
+          <div class="tf-row"><span>経費</span><span class="tf-val expense" id="rpt-expense">¥0</span></div>
+          <div class="tf-op">−</div>
+          <div class="tf-row"><span>減価償却</span><span class="tf-val" id="rpt-depreciation">¥0</span></div>
+          <div class="tf-eq"></div>
+          <div class="tf-row bold"><span>所得</span><span class="tf-val" id="rpt-net-income">¥0</span></div>
+          <div class="tf-op">−</div>
+          <div class="tf-row"><span>控除合計</span><span class="tf-val" id="rpt-deductions">¥0</span></div>
+          <div class="tf-eq thick"></div>
+          <div class="tf-row bold"><span>課税所得</span><span class="tf-val primary" id="rpt-taxable">¥0</span></div>
+        </div>
+
+        <!-- 税額の内訳 -->
+        <div class="card">
+          <h3 class="card-title">税額の内訳</h3>
+          <div id="tax-breakdown"></div>
+        </div>
+
+        <!-- 節税ヒント -->
+        <div class="card" id="tax-tips-card" style="display:none">
+          <h3 class="card-title">💡 節税のヒント</h3>
+          <div id="tax-tips"></div>
+        </div>
+
+        <!-- 控除の管理 -->
+        <div class="card">
+          <h3 class="card-title">控除の管理</h3>
+          <div id="deduction-list"></div>
+          <button class="btn-outline btn-sm" id="btn-add-deduction" style="margin-top:8px">＋ 控除を追加</button>
+        </div>
+
+        <!-- 減価償却 -->
+        <div class="card">
+          <h3 class="card-title">減価償却</h3>
+          <div id="depreciation-list"></div>
+          <button class="btn-outline btn-sm" id="btn-add-depreciation" style="margin-top:8px">＋ 資産を追加</button>
+        </div>
+
+        <!-- 経費内訳 -->
         <div class="card"><h3 class="card-title">経費内訳</h3><div id="rpt-breakdown"></div></div>
+
+        <!-- 月別推移 -->
         <div class="card"><h3 class="card-title">月別推移</h3><div class="chart-wrap"><canvas id="chart-report"></canvas></div></div>
+
+        <!-- AI -->
         <div class="card">
           <h3 class="card-title">AI相談用データ</h3>
           <button class="btn-primary btn-sm" id="btn-ai-gen">データを生成</button>
@@ -332,7 +377,8 @@
       <form id="form-income" class="modal-form">
         <div class="fg"><label>日付</label><input type="date" id="inc-date" class="fi" required></div>
         <div class="fg"><label>金額</label><div class="fi-amt"><span>¥</span><input type="number" id="inc-amount" class="fi" placeholder="0" inputmode="numeric" required></div></div>
-        <div class="fg"><label>種類</label><select id="inc-type" class="fi"><option value="振込">振込</option><option value="現金">現金</option><option value="その他">その他</option></select></div>
+        <div class="fg"><label>入金方法</label><select id="inc-type" class="fi"><option value="振込">振込</option><option value="現金">現金</option><option value="その他">その他</option></select></div>
+        <div class="fg"><label>所得区分</label><select id="inc-income-type" class="fi"><option value="business">事業所得</option><option value="salary">給与所得</option><option value="fx_stock">株・FX（分離課税）</option><option value="real_estate">不動産所得</option><option value="misc">その他</option></select></div>
         <div class="fg"><label>摘要</label><input type="text" id="inc-desc" class="fi" placeholder="例: ○○株式会社 報酬"></div>
         <button type="submit" class="btn-save btn-full">保存</button>
       </form>
