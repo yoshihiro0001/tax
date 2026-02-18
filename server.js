@@ -7,6 +7,8 @@ const bcrypt = require('bcryptjs');
 const cookieParser = require('cookie-parser');
 const crypto = require('crypto');
 const https = require('https');
+const sharp = require('sharp');
+const archiver = require('archiver');
 
 const app = express();
 const router = express.Router();
@@ -195,15 +197,33 @@ db.exec(`
   );
 `);
 
-// === マイグレーション: 既存テーブルにカラム追加 ===
+// === マイグレーション: 既存テーブルにカラム追加（統合済み） ===
 const migrations = [
   "ALTER TABLE users ADD COLUMN avatar_url TEXT",
   "ALTER TABLE users ADD COLUMN auth_provider TEXT DEFAULT 'local'",
-  "ALTER TABLE expenses ADD COLUMN created_by INTEGER",
 ];
 for (const sql of migrations) {
-  try { db.exec(sql); } catch (e) { /* カラムが既に存在する場合は無視 */ }
+  try { db.exec(sql); } catch (e) {}
 }
+
+// === インデックス ===
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_income_book_date ON income(book_id, date);
+  CREATE INDEX IF NOT EXISTS idx_income_book_status ON income(book_id, status);
+  CREATE INDEX IF NOT EXISTS idx_expenses_book_date ON expenses(book_id, date);
+  CREATE INDEX IF NOT EXISTS idx_expenses_book_status ON expenses(book_id, status);
+  CREATE INDEX IF NOT EXISTS idx_expenses_book_cat ON expenses(book_id, category);
+  CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
+  CREATE INDEX IF NOT EXISTS idx_activity_user_date ON activity_logs(user_id, created_at);
+  CREATE INDEX IF NOT EXISTS idx_book_members_book ON book_members(book_id, user_id);
+`);
+
+// === セッションクリーンアップ ===
+function cleanExpiredSessions() {
+  try { db.prepare("DELETE FROM sessions WHERE expires_at < datetime('now','localtime')").run(); } catch {}
+}
+cleanExpiredSessions();
+setInterval(cleanExpiredSessions, 24 * 60 * 60 * 1000);
 
 // エラーログ記録ヘルパー
 function logError(message, endpoint, userId, stack) {
@@ -270,8 +290,14 @@ const categoryKeywords = {
   outsourcing: ['外注','業務委託','ランサーズ','クラウドワークス','ココナラ','デザイン料','開発費'],
   fees: ['振込手数料','手数料','PayPal','Stripe','決済','銀行','ATM','送金','年会費'],
   home_office: ['電気','ガス','水道','家賃','光熱'],
-  depreciation: ['パソコン','PC','Mac','MacBook','iPhone','iPad','カメラ','ディスプレイ','モニター','プリンター']
+  depreciation: ['パソコン','PC','Mac','MacBook','iPhone','iPad','カメラ','ディスプレイ','モニター','プリンター'],
+  tax_cost: ['消費税','印紙税','事業税','固定資産税','自動車税','登録免許税','不動産取得税','印紙','収入印紙','軽自動車税','都市計画税'],
+  tax_profit: ['所得税','住民税','法人税','予定納税','源泉所得税','延滞税','加算税','確定申告']
 };
+
+// 利益課税カテゴリ（経費合計に含めない）
+const TAX_PROFIT_CATEGORY = 'tax_profit';
+const EXPENSE_EXCLUDE_FILTER = `AND category != '${TAX_PROFIT_CATEGORY}'`;
 
 function suggestCategoryWithAmount(desc, amount) {
   const cat = suggestCategory(desc);
@@ -645,14 +671,37 @@ router.get('/api/income/:id', auth, (req, res) => {
 // 経費 API (帳簿スコープ)
 // ========================================
 
-router.post('/api/expense', auth, upload.single('receipt'), (req, res) => {
+// レシート画像圧縮: 最大1200px, JPEG quality75, EXIF削除
+async function compressReceipt(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (!/\.(jpe?g|png|gif|webp|heic)$/i.test(ext)) return filePath;
+  const outName = path.basename(filePath, ext) + '.jpg';
+  const outPath = path.join(path.dirname(filePath), outName);
+  try {
+    await sharp(filePath)
+      .rotate()
+      .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 75 })
+      .toFile(outPath);
+    if (outPath !== filePath) fs.unlinkSync(filePath);
+    return outPath;
+  } catch (e) {
+    return filePath;
+  }
+}
+
+router.post('/api/expense', auth, upload.single('receipt'), async (req, res) => {
   try {
     const { bookId, date, amount, category, description, source } = req.body;
     const book = bookAccess(req);
     if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
     if (!book.can_input_expense) return res.status(403).json({ error: '経費の入力権限がありません' });
     if (!date || !amount || !category) return res.status(400).json({ error: '日付、金額、科目は必須' });
-    const receiptPath = req.file ? `/uploads/${req.file.filename}` : null;
+    let receiptPath = null;
+    if (req.file) {
+      const compressed = await compressReceipt(req.file.path);
+      receiptPath = `/uploads/${path.basename(compressed)}`;
+    }
     const isOwner = book.memberRole === 'owner';
     const status = isOwner ? 'approved' : 'pending';
     const approvedAt = isOwner ? new Date().toISOString() : null;
@@ -803,9 +852,9 @@ router.get('/api/dashboard', auth, (req, res) => {
     const month = (now.getMonth()+1).toString().padStart(2,'0');
 
     const mi = book.can_view_income ? db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM income WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=? AND strftime('%m',date)=?").get(book.id,year,month) : {t:0};
-    const me = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=? AND strftime('%m',date)=?").get(book.id,year,month);
+    const me = db.prepare(`SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=? AND strftime('%m',date)=? ${EXPENSE_EXCLUDE_FILTER}`).get(book.id,year,month);
     const yi = book.can_view_income ? db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM income WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=?").get(book.id,year) : {t:0};
-    const ye = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=?").get(book.id,year);
+    const ye = db.prepare(`SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=? ${EXPENSE_EXCLUDE_FILTER}`).get(book.id,year);
 
     const ri = book.can_view_income ? db.prepare("SELECT id,date,amount,type as category,description,'income' as kind,status,created_by FROM income WHERE book_id=? AND (status='approved' OR status IS NULL) ORDER BY date DESC,id DESC LIMIT 10").all(book.id) : [];
     let expSql = "SELECT id,date,amount,category,description,'expense' as kind,status,created_by FROM expenses WHERE book_id=? AND (status='approved' OR status IS NULL)";
@@ -843,16 +892,41 @@ router.get('/api/summary/:year', auth, (req, res) => {
     const book = bookAccess(req);
     if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
     const year = req.params.year;
+    const { startDate, endDate } = req.query;
     const approvedFilter = "AND (status='approved' OR status IS NULL)";
-    const inc = db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM income WHERE book_id=? ${approvedFilter} AND strftime('%Y',date)=?`).get(book.id,year);
-    const exp = db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM expenses WHERE book_id=? ${approvedFilter} AND strftime('%Y',date)=?`).get(book.id,year);
-    const breakdown = db.prepare(`SELECT category,SUM(amount) as total,COUNT(*) as count FROM expenses WHERE book_id=? ${approvedFilter} AND strftime('%Y',date)=? GROUP BY category ORDER BY total DESC`).all(book.id,year);
-    const mi = db.prepare(`SELECT strftime('%m',date) as month,SUM(amount) as total FROM income WHERE book_id=? ${approvedFilter} AND strftime('%Y',date)=? GROUP BY strftime('%m',date)`).all(book.id,year);
-    const me2 = db.prepare(`SELECT strftime('%m',date) as month,SUM(amount) as total FROM expenses WHERE book_id=? ${approvedFilter} AND strftime('%Y',date)=? GROUP BY strftime('%m',date)`).all(book.id,year);
-    // 収入区分別内訳
-    const incomeBreakdown = db.prepare(`SELECT COALESCE(income_type,'business') as income_type, SUM(amount) as total, COUNT(*) as count FROM income WHERE book_id=? ${approvedFilter} AND strftime('%Y',date)=? GROUP BY COALESCE(income_type,'business') ORDER BY total DESC`).all(book.id, year);
 
-    res.json({ year, income:inc.total, expenses:exp.total, profit:inc.total-exp.total, breakdown, incomeBreakdown, monthlyIncome:mi, monthlyExpense:me2 });
+    let dateFilter, dateParams;
+    if (startDate && endDate) {
+      dateFilter = 'AND date >= ? AND date <= ?';
+      dateParams = [startDate, endDate];
+    } else {
+      dateFilter = "AND strftime('%Y',date) = ?";
+      dateParams = [year];
+    }
+
+    const inc = db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM income WHERE book_id=? ${approvedFilter} ${dateFilter}`).get(book.id, ...dateParams);
+    const exp = db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM expenses WHERE book_id=? ${approvedFilter} ${dateFilter} ${EXPENSE_EXCLUDE_FILTER}`).get(book.id, ...dateParams);
+    const breakdown = db.prepare(`SELECT category,SUM(amount) as total,COUNT(*) as count FROM expenses WHERE book_id=? ${approvedFilter} ${dateFilter} GROUP BY category ORDER BY total DESC`).all(book.id, ...dateParams);
+    const taxProfitTotal = db.prepare(`SELECT COALESCE(SUM(amount),0) as total FROM expenses WHERE book_id=? ${approvedFilter} ${dateFilter} AND category='tax_profit'`).get(book.id, ...dateParams).total;
+    const mi = db.prepare(`SELECT strftime('%Y-%m',date) as month,SUM(amount) as total FROM income WHERE book_id=? ${approvedFilter} ${dateFilter} GROUP BY strftime('%Y-%m',date) ORDER BY month`).all(book.id, ...dateParams);
+    const me2 = db.prepare(`SELECT strftime('%Y-%m',date) as month,SUM(amount) as total FROM expenses WHERE book_id=? ${approvedFilter} ${dateFilter} ${EXPENSE_EXCLUDE_FILTER} GROUP BY strftime('%Y-%m',date) ORDER BY month`).all(book.id, ...dateParams);
+    const incomeBreakdown = db.prepare(`SELECT COALESCE(income_type,'business') as income_type, SUM(amount) as total, COUNT(*) as count FROM income WHERE book_id=? ${approvedFilter} ${dateFilter} GROUP BY COALESCE(income_type,'business') ORDER BY total DESC`).all(book.id, ...dateParams);
+
+    // カテゴリ別の売上比率
+    const totalIncome = inc.total || 1;
+    const categoryRatios = breakdown.map(b => ({
+      ...b,
+      incomeRatio: Math.round(b.total / totalIncome * 1000) / 10,
+      isTaxProfit: b.category === TAX_PROFIT_CATEGORY
+    }));
+
+    res.json({
+      year, startDate: startDate || `${year}-01-01`, endDate: endDate || `${year}-12-31`,
+      income: inc.total, expenses: exp.total, taxProfitTotal,
+      profit: inc.total - exp.total,
+      breakdown: categoryRatios, incomeBreakdown,
+      monthlyIncome: mi, monthlyExpense: me2
+    });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -953,8 +1027,9 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
     const businessIncome = incomeByType.find(r => r.income_type === 'business')?.total || 0;
     const separateIncome = incomeByType.find(r => r.income_type === 'fx_stock')?.total || 0;
 
-    // 経費（承認済みのみ）
-    const totalExpenses = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=?").get(book.id, year).t;
+    // 経費（承認済みのみ、利益課税は除外）
+    const totalExpenses = db.prepare(`SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=? ${EXPENSE_EXCLUDE_FILTER}`).get(book.id, year).t;
+    const taxProfitTotal = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=? AND category='tax_profit'").get(book.id, year).t;
 
     // 減価償却
     const deps = db.prepare('SELECT * FROM depreciations WHERE book_id=?').all(book.id);
@@ -1128,7 +1203,7 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
       taxByIncomeType,
       comprehensiveTaxDetail,
       totalIncome, comprehensiveIncome, separateIncome,
-      totalExpenses, totalDepreciation, totalDeductions,
+      totalExpenses, taxProfitTotal, totalDepreciation, totalDeductions,
       depreciationDetails: depDetails,
       deductions: deductionList.map(d => ({ ...d, label: DEDUCTION_LABELS[d.type] || d.name || d.type })),
       netBusinessIncome, taxableIncome,
@@ -1281,6 +1356,47 @@ router.get('/api/export', auth, (req, res) => {
     res.setHeader('Content-Disposition',`attachment; filename=keihi-backup-${book.name}-${new Date().toISOString().slice(0,10)}.json`);
     res.json({ exportDate: new Date().toISOString(), book: book.name, income: inc, expenses: exp });
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// レシートZIPエクスポート（任意期間、カテゴリ別フォルダ）
+router.get('/api/export-receipts', auth, (req, res) => {
+  try {
+    const book = bookAccess(req);
+    if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
+    const { startDate, endDate } = req.query;
+    if (!startDate || !endDate) return res.status(400).json({ error: '開始日と終了日を指定してください' });
+
+    const expenses = db.prepare(
+      "SELECT e.*, u.name as creator_name FROM expenses e LEFT JOIN users u ON e.created_by = u.id WHERE e.book_id=? AND (e.status='approved' OR e.status IS NULL) AND e.date >= ? AND e.date <= ? AND e.receipt_path IS NOT NULL AND e.receipt_path != '' ORDER BY e.date"
+    ).all(book.id, startDate, endDate);
+
+    if (expenses.length === 0) return res.status(404).json({ error: '該当期間のレシートがありません' });
+
+    const CATEGORY_NAMES = {
+      travel:'旅費交通費', communication:'通信費', supplies:'消耗品費', advertising:'広告宣伝費',
+      entertainment:'接待交際費', outsourcing:'外注工賃', fees:'支払手数料', home_office:'家事按分',
+      depreciation:'減価償却費', medical:'医療費', insurance:'保険料', misc:'雑費',
+      tax_cost:'租税公課', tax_profit:'利益課税'
+    };
+
+    const zipName = `Receipts_${startDate}_${endDate}.zip`;
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${zipName}"`);
+
+    const archive = archiver('zip', { zlib: { level: 5 } });
+    archive.pipe(res);
+
+    for (const e of expenses) {
+      const fp = path.join(__dirname, e.receipt_path.startsWith('/') ? e.receipt_path : '/' + e.receipt_path);
+      if (!fs.existsSync(fp)) continue;
+      const catName = CATEGORY_NAMES[e.category] || e.category || '未分類';
+      const desc = (e.description || '').replace(/[\/\\:*?"<>|]/g, '_').substring(0, 30);
+      const fileName = `${e.date}_${e.amount}円_${desc}${path.extname(fp)}`;
+      archive.file(fp, { name: `${startDate}_${endDate}/${catName}/${fileName}` });
+    }
+
+    archive.finalize();
+  } catch (err) { logError(err.message, '/api/export-receipts', req.userId, err.stack); res.status(500).json({ error: err.message }); }
 });
 
 // 管理者ミドルウェア

@@ -1164,5 +1164,88 @@ body { min-height: 100dvh; }
 .edit-meta-status-approved { color: var(--green); }
 .edit-meta-status-rejected { color: var(--red); }
 
+/* ============================================
+   期間選択バー
+   ============================================ */
+.rpt-period-bar {
+  display: flex; align-items: flex-end; gap: 8px; padding: 0 16px 8px;
+}
+.rpt-period-field { flex: 1; }
+.rpt-period-field label {
+  display: block; font-size: 11px; color: var(--text3); font-weight: 500; margin-bottom: 2px;
+}
+.rpt-period-sep {
+  font-size: 14px; color: var(--text3); padding-bottom: 8px;
+}
+.fi-sm {
+  padding: 8px 10px !important; font-size: 13px !important;
+}
+.rpt-action-bar {
+  display: flex; gap: 8px; padding: 0 16px 12px;
+}
+.rpt-action-bar .btn-outline {
+  flex: 1; font-size: 13px; padding: 8px;
+}
+
+/* ============================================
+   分析セクション
+   ============================================ */
+.an-summary {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px;
+}
+.an-kpi {
+  display: flex; flex-direction: column; align-items: center;
+  background: var(--bg); border-radius: var(--radius-xs); padding: 12px 6px;
+}
+.an-kpi-val { font-size: 16px; font-weight: 700; }
+.an-kpi-val.income { color: var(--green); }
+.an-kpi-val.expense { color: var(--red); }
+.an-kpi-label { font-size: 11px; color: var(--text3); margin-top: 2px; }
+.an-rates { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.an-rate-item { display: flex; align-items: center; gap: 8px; }
+.an-rate-bar { flex: 1; height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; }
+.an-rate-fill { display: block; height: 100%; border-radius: 4px; transition: width .5s ease; }
+.an-rate-fill.income { background: var(--green); }
+.an-rate-fill.expense { background: var(--red); }
+.an-rate-text { font-size: 12px; font-weight: 600; color: var(--text2); min-width: 70px; text-align: right; }
+.an-tax-profit-note {
+  padding: 10px 12px; background: #fef9c3; border-radius: var(--radius-xs);
+  font-size: 12px; color: #854d0e; margin-bottom: 16px;
+}
+.an-section-title { font-size: 14px; font-weight: 700; margin: 16px 0 8px; }
+.an-sub { font-size: 11px; font-weight: 400; color: var(--text3); }
+.an-cat-list { display: flex; flex-direction: column; gap: 6px; }
+.an-cat-row {
+  display: grid; grid-template-columns: 8px 1fr auto auto auto; align-items: center; gap: 6px;
+  padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 12px;
+}
+.an-cat-dot { width: 8px; height: 8px; border-radius: 50%; }
+.an-cat-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.an-cat-pct { font-weight: 700; color: var(--text); text-align: right; }
+.an-cat-ratio { color: var(--text3); font-size: 11px; text-align: right; min-width: 60px; }
+.an-cat-val { font-weight: 600; color: var(--text2); text-align: right; min-width: 75px; }
+.an-monthly-table { overflow-x: auto; margin-top: 8px; }
+.an-monthly-table table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.an-monthly-table th { text-align: left; padding: 6px 4px; font-weight: 600; border-bottom: 2px solid var(--border); white-space: nowrap; }
+.an-monthly-table td { padding: 6px 4px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.an-monthly-table .income { color: var(--green); font-weight: 600; }
+.an-monthly-table .expense { color: var(--red); font-weight: 600; }
+
+/* ============================================
+   経費内訳: 利益課税の別スタイル
+   ============================================ */
+.bd-tax-profit {
+  opacity: 0.7; border-left: 3px solid #fbbf24; padding-left: 8px; margin-left: -8px;
+}
+.bd-fill.tax-profit { background: #fcd34d !important; }
+.bd-tag-tp {
+  display: inline-block; padding: 1px 5px; margin-left: 4px;
+  background: #fef3c7; color: #92400e; border-radius: 4px;
+  font-size: 9px; font-weight: 700; vertical-align: middle;
+}
+.bd-ratio {
+  font-size: 10px; color: var(--text3); font-weight: 400;
+}
+
 /* Print */
 @media print { .topbar, .bottom-nav, .overlay { display: none !important; } }

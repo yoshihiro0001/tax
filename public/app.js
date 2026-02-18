@@ -26,8 +26,11 @@ const App = {
     { id: 'depreciation', name: '減価償却費', icon: '💻' },
     { id: 'medical', name: '医療費', icon: '🏥' },
     { id: 'insurance', name: '保険料', icon: '🛡' },
+    { id: 'tax_cost', name: '租税公課', icon: '🏛' },
+    { id: 'tax_profit', name: '利益課税', icon: '📋' },
     { id: 'misc', name: '雑費', icon: '📌' }
   ],
+  isTaxProfit(cat) { return cat === 'tax_profit'; },
 
   categoryName(id) {
     const c = this.categories.find(c => c.id === id);
@@ -572,7 +575,9 @@ const App = {
       outsourcing: ['外注','業務委託','ランサーズ','クラウドワークス'],
       fees: ['手数料','PayPal','Stripe','振込','ATM'],
       home_office: ['電気','ガス','水道','家賃'],
-      depreciation: ['パソコン','PC','Mac','iPhone','iPad','カメラ','モニター','プリンター']
+      depreciation: ['パソコン','PC','Mac','iPhone','iPad','カメラ','モニター','プリンター'],
+      tax_cost: ['消費税','印紙税','事業税','固定資産税','自動車税','収入印紙','都市計画税'],
+      tax_profit: ['所得税','住民税','法人税','予定納税','源泉所得税','確定申告']
     };
     for (const [cat, kws] of Object.entries(map)) {
       for (const kw of kws) { if (d.includes(kw.toLowerCase())) return cat; }
@@ -667,7 +672,25 @@ const App = {
     for (let y = thisYear; y >= thisYear - 3; y--) {
       sel.innerHTML += `<option value="${y}">${y}年</option>`;
     }
-    sel.addEventListener('change', () => this.loadReport());
+    sel.addEventListener('change', () => {
+      const y = sel.value;
+      qs('#rpt-start-date').value = `${y}-01-01`;
+      qs('#rpt-end-date').value = `${y}-12-31`;
+      this.loadReport();
+    });
+
+    const today = new Date();
+    qs('#rpt-start-date').value = `${thisYear}-01-01`;
+    qs('#rpt-end-date').value = today.toISOString().slice(0, 10);
+    qs('#rpt-start-date').addEventListener('change', () => this.loadReport());
+    qs('#rpt-end-date').addEventListener('change', () => this.loadReport());
+
+    qs('#btn-toggle-analytics').addEventListener('click', () => {
+      const sec = qs('#analytics-section');
+      sec.style.display = sec.style.display === 'none' ? '' : 'none';
+    });
+
+    qs('#btn-export-receipts').addEventListener('click', () => this.exportReceipts());
 
     qs('#btn-ai-gen').addEventListener('click', async () => {
       try {
@@ -744,12 +767,37 @@ const App = {
     });
   },
 
+  getReportPeriod() {
+    return {
+      year: qs('#report-year').value,
+      startDate: qs('#rpt-start-date').value,
+      endDate: qs('#rpt-end-date').value
+    };
+  },
+
+  async exportReceipts() {
+    if (!this.currentBook) return;
+    const { startDate, endDate } = this.getReportPeriod();
+    try {
+      const url = `${BASE}/api/export-receipts?bookId=${this.currentBook.id}&startDate=${startDate}&endDate=${endDate}`;
+      const res = await fetch(url, { credentials: 'same-origin' });
+      if (!res.ok) { const e = await res.json(); this.toast(e.error, 'error'); return; }
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `Receipts_${startDate}_${endDate}.zip`;
+      a.click();
+      this.toast('エクスポートしました', 'success');
+    } catch (err) { this.toast(err.message, 'error'); }
+  },
+
   async loadReport() {
     if (!this.currentBook) return;
-    const y = qs('#report-year').value;
+    const { year: y, startDate, endDate } = this.getReportPeriod();
     try {
-      // サマリー（経費内訳・月別推移用）
-      const d = await this.api(`/api/summary/${y}?bookId=${this.currentBook.id}`);
+      const periodParam = `&startDate=${startDate}&endDate=${endDate}`;
+      const d = await this.api(`/api/summary/${y}?bookId=${this.currentBook.id}${periodParam}`);
+
       // 収入内訳バー
       const incBdWrap = qs('#rpt-income-breakdown');
       const incEmpty = qs('#rpt-income-empty');
@@ -768,16 +816,23 @@ const App = {
         incEmpty.style.display = '';
       }
 
-      // 経費内訳バー
+      // 経費内訳バー（tax_profitは別スタイル）
       const bdWrap = qs('#rpt-breakdown');
       const expEmpty = qs('#rpt-expense-empty');
       if (d.breakdown.length > 0) {
         expEmpty.style.display = 'none';
-        const maxBd = d.breakdown[0].total;
-        bdWrap.innerHTML = d.breakdown.map(b => `
-          <div class="bd-item" data-category="${b.category}"><div class="bd-head"><span class="bd-name">${this.categoryIcon(b.category)} ${this.categoryName(b.category)}</span><span class="bd-val">¥${b.total.toLocaleString()} (${b.count}件) <span class="bd-arrow">›</span></span></div>
-          <div class="bd-bar"><div class="bd-fill" style="width:${(b.total/maxBd*100).toFixed(1)}%"></div></div></div>
-        `).join('');
+        const maxBd = Math.max(...d.breakdown.map(b => b.total));
+        bdWrap.innerHTML = d.breakdown.map(b => {
+          const isTp = b.isTaxProfit;
+          const ratioLabel = b.incomeRatio ? `${b.incomeRatio}%` : '';
+          return `<div class="bd-item ${isTp ? 'bd-tax-profit' : ''}" data-category="${b.category}">
+            <div class="bd-head">
+              <span class="bd-name">${this.categoryIcon(b.category)} ${this.categoryName(b.category)}${isTp ? ' <span class="bd-tag-tp">経費外</span>' : ''}</span>
+              <span class="bd-val">¥${b.total.toLocaleString()} <span class="bd-ratio">${ratioLabel}</span> <span class="bd-arrow">›</span></span>
+            </div>
+            <div class="bd-bar"><div class="bd-fill ${isTp ? 'tax-profit' : ''}" style="width:${(b.total/maxBd*100).toFixed(1)}%"></div></div>
+          </div>`;
+        }).join('');
         bdWrap.querySelectorAll('.bd-item').forEach(el => {
           el.addEventListener('click', () => this.openTxListModal('expense', y, el.dataset.category));
         });
@@ -786,6 +841,7 @@ const App = {
         expEmpty.style.display = '';
       }
       this.renderReportChart(d);
+      this.renderAnalytics(d);
 
       // 税額シミュレーション
       const t = await this.api(`/api/tax-simulation/${y}?bookId=${this.currentBook.id}`);
@@ -1045,18 +1101,24 @@ const App = {
   },
 
   renderReportChart(d) {
-    const months = d.monthlyExpense.map(m => parseInt(m.month) + '月');
-    const expData = Array(12).fill(0);
-    const incData = Array(12).fill(0);
-    d.monthlyExpense.forEach(m => { expData[parseInt(m.month)-1] = m.total; });
-    d.monthlyIncome.forEach(m => { incData[parseInt(m.month)-1] = m.total; });
+    const allMonths = new Set([
+      ...d.monthlyIncome.map(m => m.month),
+      ...d.monthlyExpense.map(m => m.month)
+    ]);
+    const sortedMonths = [...allMonths].sort();
+    const labels = sortedMonths.map(m => {
+      const parts = m.split('-');
+      return parts.length === 2 ? parseInt(parts[1]) + '月' : m;
+    });
+    const incData = sortedMonths.map(m => (d.monthlyIncome.find(i => i.month === m) || {}).total || 0);
+    const expData = sortedMonths.map(m => (d.monthlyExpense.find(e => e.month === m) || {}).total || 0);
 
     if (this.reportChart) this.reportChart.destroy();
     const ctx = qs('#chart-report').getContext('2d');
     this.reportChart = new Chart(ctx, {
       type: 'bar',
       data: {
-        labels: ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'],
+        labels,
         datasets: [
           { label: '収入', data: incData, backgroundColor: 'rgba(34,197,94,.4)', borderRadius: 4 },
           { label: '経費', data: expData, backgroundColor: 'rgba(239,68,68,.4)', borderRadius: 4 }
@@ -1071,6 +1133,86 @@ const App = {
         }
       }
     });
+  },
+
+  renderAnalytics(d) {
+    const wrap = qs('#analytics-content');
+    if (!wrap) return;
+    const income = d.income || 0;
+    const expenses = d.expenses || 0;
+    const profit = d.profit || 0;
+    const taxProfit = d.taxProfitTotal || 0;
+    const profitRate = income > 0 ? Math.round(profit / income * 1000) / 10 : 0;
+    const expenseRate = income > 0 ? Math.round(expenses / income * 1000) / 10 : 0;
+
+    // カテゴリ分析（tax_profit除外）
+    const expCats = (d.breakdown || []).filter(b => !b.isTaxProfit);
+    const totalExp = expCats.reduce((s, b) => s + b.total, 0) || 1;
+
+    let html = `
+      <div class="an-summary">
+        <div class="an-kpi">
+          <span class="an-kpi-val income">¥${income.toLocaleString()}</span>
+          <span class="an-kpi-label">売上</span>
+        </div>
+        <div class="an-kpi">
+          <span class="an-kpi-val expense">¥${expenses.toLocaleString()}</span>
+          <span class="an-kpi-label">経費（税除く）</span>
+        </div>
+        <div class="an-kpi">
+          <span class="an-kpi-val ${profit >= 0 ? 'income' : 'expense'}">¥${profit.toLocaleString()}</span>
+          <span class="an-kpi-label">利益</span>
+        </div>
+      </div>
+      <div class="an-rates">
+        <div class="an-rate-item"><span class="an-rate-bar"><span class="an-rate-fill income" style="width:${Math.min(profitRate, 100)}%"></span></span><span class="an-rate-text">利益率 ${profitRate}%</span></div>
+        <div class="an-rate-item"><span class="an-rate-bar"><span class="an-rate-fill expense" style="width:${Math.min(expenseRate, 100)}%"></span></span><span class="an-rate-text">経費率 ${expenseRate}%</span></div>
+      </div>`;
+
+    if (taxProfit > 0) {
+      html += `<div class="an-tax-profit-note">📋 利益課税（所得税・住民税等）: <strong>¥${taxProfit.toLocaleString()}</strong>　※経費合計には含まず</div>`;
+    }
+
+    // カテゴリ別ドーナツチャート風の割合表示
+    if (expCats.length > 0) {
+      html += '<h4 class="an-section-title">カテゴリ別 経費割合 <span class="an-sub">（売上に対する比率）</span></h4>';
+      html += '<div class="an-cat-list">';
+      const colors = ['#6366f1','#22c55e','#f59e0b','#ef4444','#06b6d4','#8b5cf6','#ec4899','#14b8a6','#f97316','#84cc16','#64748b','#a855f7','#0ea5e9'];
+      expCats.forEach((b, i) => {
+        const pct = Math.round(b.total / totalExp * 1000) / 10;
+        const incRatio = b.incomeRatio || 0;
+        const color = colors[i % colors.length];
+        html += `<div class="an-cat-row">
+          <span class="an-cat-dot" style="background:${color}"></span>
+          <span class="an-cat-name">${this.categoryIcon(b.category)} ${this.categoryName(b.category)}</span>
+          <span class="an-cat-pct">${pct}%</span>
+          <span class="an-cat-ratio">売上の${incRatio}%</span>
+          <span class="an-cat-val">¥${b.total.toLocaleString()}</span>
+        </div>`;
+      });
+      html += '</div>';
+    }
+
+    // 月別サマリーテーブル
+    if (d.monthlyIncome && d.monthlyIncome.length > 0) {
+      const allMonths = new Set([
+        ...d.monthlyIncome.map(m => m.month),
+        ...d.monthlyExpense.map(m => m.month)
+      ]);
+      const sorted = [...allMonths].sort();
+      html += '<h4 class="an-section-title">月別サマリー</h4><div class="an-monthly-table"><table><thead><tr><th>月</th><th>売上</th><th>経費</th><th>利益</th><th>利益率</th></tr></thead><tbody>';
+      sorted.forEach(m => {
+        const mi = (d.monthlyIncome.find(i => i.month === m) || {}).total || 0;
+        const me = (d.monthlyExpense.find(e => e.month === m) || {}).total || 0;
+        const mp = mi - me;
+        const mr = mi > 0 ? Math.round(mp / mi * 100) : 0;
+        const mLabel = m.split('-').length === 2 ? parseInt(m.split('-')[1]) + '月' : m;
+        html += `<tr><td>${mLabel}</td><td class="income">¥${mi.toLocaleString()}</td><td class="expense">¥${me.toLocaleString()}</td><td class="${mp >= 0 ? 'income' : 'expense'}">¥${mp.toLocaleString()}</td><td>${mr}%</td></tr>`;
+      });
+      html += '</tbody></table></div>';
+    }
+
+    wrap.innerHTML = html;
   },
 
   // ========================================

@@ -126,6 +126,31 @@
           <select id="report-year" class="sel-year"></select>
         </div>
 
+        <!-- 期間指定 -->
+        <div class="rpt-period-bar">
+          <div class="rpt-period-field">
+            <label>開始</label>
+            <input type="date" id="rpt-start-date" class="fi fi-sm">
+          </div>
+          <span class="rpt-period-sep">〜</span>
+          <div class="rpt-period-field">
+            <label>終了</label>
+            <input type="date" id="rpt-end-date" class="fi fi-sm">
+          </div>
+        </div>
+
+        <!-- 分析・エクスポートボタン -->
+        <div class="rpt-action-bar">
+          <button class="btn-outline btn-sm" id="btn-toggle-analytics">📊 分析</button>
+          <button class="btn-outline btn-sm" id="btn-export-receipts">📥 レシートZIP</button>
+        </div>
+
+        <!-- 分析セクション（トグル） -->
+        <div class="card" id="analytics-section" style="display:none">
+          <h3 class="card-title">📊 経営分析</h3>
+          <div id="analytics-content"></div>
+        </div>
+
         <!-- 税額サマリー（大きく表示） -->
         <div class="tax-hero" id="tax-hero">
           <div class="tax-hero-label">あなたの税金（推定）</div>
