@@ -698,25 +698,16 @@ const App = {
     for (let y = thisYear; y >= thisYear - 3; y--) {
       sel.innerHTML += `<option value="${y}">${y}年</option>`;
     }
-    sel.addEventListener('change', () => {
-      const y = sel.value;
-      qs('#rpt-start-date').value = `${y}-01-01`;
-      qs('#rpt-end-date').value = `${y}-12-31`;
-      this.loadReport();
-    });
-
-    const today = new Date();
-    qs('#rpt-start-date').value = `${thisYear}-01-01`;
-    qs('#rpt-end-date').value = today.toISOString().slice(0, 10);
-    qs('#rpt-start-date').addEventListener('change', () => this.loadReport());
-    qs('#rpt-end-date').addEventListener('change', () => this.loadReport());
+    sel.addEventListener('change', () => this.loadReport());
 
     qs('#btn-toggle-analytics').addEventListener('click', () => {
       const sec = qs('#analytics-section');
-      sec.style.display = sec.style.display === 'none' ? '' : 'none';
+      const isHidden = sec.style.display === 'none';
+      sec.style.display = isHidden ? '' : 'none';
+      const btn = qs('#btn-toggle-analytics');
+      if (isHidden) { btn.style.background = 'var(--pri-bg)'; btn.style.color = 'var(--pri)'; btn.style.borderColor = 'var(--pri)'; }
+      else { btn.style.background = ''; btn.style.color = ''; btn.style.borderColor = ''; }
     });
-
-    qs('#btn-export-receipts').addEventListener('click', () => this.exportReceipts());
 
     qs('#btn-ai-gen').addEventListener('click', async () => {
       try {
@@ -794,16 +785,19 @@ const App = {
   },
 
   getReportPeriod() {
+    const y = qs('#report-year').value;
     return {
-      year: qs('#report-year').value,
-      startDate: qs('#rpt-start-date').value,
-      endDate: qs('#rpt-end-date').value
+      year: y,
+      startDate: `${y}-01-01`,
+      endDate: `${y}-12-31`
     };
   },
 
   async exportReceipts() {
     if (!this.currentBook) return;
-    const { startDate, endDate } = this.getReportPeriod();
+    const startDate = qs('#receipt-start')?.value;
+    const endDate = qs('#receipt-end')?.value;
+    if (!startDate || !endDate) { this.toast('期間を指定してください', 'error'); return; }
     try {
       const url = `${BASE}/api/export-receipts?bookId=${this.currentBook.id}&startDate=${startDate}&endDate=${endDate}`;
       const res = await fetch(url, { credentials: 'same-origin' });
@@ -813,7 +807,7 @@ const App = {
       a.href = URL.createObjectURL(blob);
       a.download = `Receipts_${startDate}_${endDate}.zip`;
       a.click();
-      this.toast('エクスポートしました', 'success');
+      this.toast('ダウンロード開始', 'success');
     } catch (err) { this.toast(err.message, 'error'); }
   },
 
@@ -905,11 +899,10 @@ const App = {
         qs('#tax-by-type-card').style.display = 'none';
       }
 
-      // 総合課税の計算フロー
+      // 収支フロー
       qs('#rpt-income').textContent = `¥${(t.comprehensiveIncome || 0).toLocaleString()}`;
       qs('#rpt-expense').textContent = `¥${(t.totalExpenses || 0).toLocaleString()}`;
       qs('#rpt-depreciation').textContent = `¥${(t.totalDepreciation || 0).toLocaleString()}`;
-      qs('#rpt-net-income').textContent = `¥${(t.netBusinessIncome || 0).toLocaleString()}`;
       qs('#rpt-deductions').textContent = `¥${(t.totalDeductions || 0).toLocaleString()}`;
       qs('#rpt-taxable').textContent = `¥${(t.taxableIncome || 0).toLocaleString()}`;
 
@@ -933,17 +926,6 @@ const App = {
       bdHtml += `<div class="tax-bd-row total"><span>合計</span><span class="tax-bd-val">¥${(tax.totalTax || 0).toLocaleString()}</span></div>`;
       qs('#tax-breakdown').innerHTML = bdHtml;
 
-      // 税率テーブル
-      if (t.bracketMap) {
-        qs('#bracket-table').innerHTML = t.bracketMap.map(b => `
-          <div class="bracket-row ${b.isCurrent ? 'current' : ''}">
-            <span class="bracket-marker ${b.isCurrent ? 'active' : 'inactive'}"></span>
-            <span class="bracket-range">${b.max ? `〜${(b.max / 10000).toLocaleString()}万円` : `${((b.min - 1) / 10000).toLocaleString()}万円超`}</span>
-            <span class="bracket-rate">${b.ratePercent}%</span>
-          </div>
-        `).join('');
-      }
-
       // 経費の節税効果
       if (t.expenseTaxImpact && t.expenseTaxImpact.length > 0) {
         qs('#expense-impact-card').style.display = '';
@@ -965,27 +947,23 @@ const App = {
         qs('#expense-impact-card').style.display = 'none';
       }
 
-      // 節税ヒント
+      // 節税提案
       if ((t.tips || []).length > 0 || t.nextBracketInfo) {
         qs('#tax-tips-card').style.display = '';
         let tipsHtml = '';
         if (t.nextBracketInfo) {
-          tipsHtml += `<div class="tax-bracket-hint">💎 あと <strong>¥${t.nextBracketInfo.expenseNeeded.toLocaleString()}</strong> の経費で所得税率が <strong>${t.nextBracketInfo.currentRatePercent}%</strong> → <strong>${t.nextBracketInfo.lowerRatePercent}%</strong> に下がります</div>`;
+          tipsHtml += `<div class="tax-bracket-hint">💎 あと¥${t.nextBracketInfo.expenseNeeded.toLocaleString()}の経費で税率${t.nextBracketInfo.currentRatePercent}% → ${t.nextBracketInfo.lowerRatePercent}%</div>`;
         }
-        tipsHtml += (t.tips || []).map(tip => {
-          if (tip.type === 'new_category') {
-            return `<div class="tax-tip">
-              <div class="tax-tip-head"><span class="tax-tip-category">${this.categoryIcon(tip.category)} ${tip.label}</span><span class="tax-tip-saving">-¥${tip.saving.toLocaleString()}</span></div>
-              <div class="tax-tip-desc">${tip.hint}</div>
-              <div class="tax-tip-rate">例: ¥${tip.estimatedExpense.toLocaleString()}の経費 → 実効税率${tip.effectiveRatePercent}%で節税</div>
-            </div>`;
-          } else {
-            return `<div class="tax-tip">
-              <div class="tax-tip-head"><span class="tax-tip-category">${this.categoryIcon(tip.category)} ${tip.label}</span><span class="tax-tip-saving">-¥${tip.saving.toLocaleString()}</span></div>
-              <div class="tax-tip-desc">現在 ¥${tip.currentAmount.toLocaleString()} → ${tip.hint}</div>
-              <div class="tax-tip-rate">+¥${tip.additionalExpense.toLocaleString()}追加で実効税率${tip.effectiveRatePercent}%分の節税</div>
-            </div>`;
-          }
+        tipsHtml += (t.tips || []).slice(0, 3).map(tip => {
+          const icon = this.categoryIcon(tip.category);
+          const desc = tip.type === 'new_category' ? tip.hint : `現在¥${tip.currentAmount.toLocaleString()}`;
+          return `<div class="tax-tip">
+            <div class="tax-tip-body">
+              <div class="tax-tip-head"><span class="tax-tip-category">${icon} ${tip.label}</span></div>
+              <div class="tax-tip-desc">${desc}</div>
+            </div>
+            <span class="tax-tip-saving">-¥${tip.saving.toLocaleString()}</span>
+          </div>`;
         }).join('');
         qs('#tax-tips').innerHTML = tipsHtml;
       } else {
@@ -1679,6 +1657,14 @@ const App = {
       qs('#csv-step-preview').style.display = 'none';
       qs('#csv-loading').style.display = 'none';
     });
+
+    // レシートZIPエクスポート（設定画面）
+    const thisYear = new Date().getFullYear();
+    const receiptStart = qs('#receipt-start');
+    const receiptEnd = qs('#receipt-end');
+    if (receiptStart) receiptStart.value = `${thisYear}-01-01`;
+    if (receiptEnd) receiptEnd.value = new Date().toISOString().slice(0, 10);
+    qs('#btn-export-receipts')?.addEventListener('click', () => this.exportReceipts());
 
     // 帳簿追加
     qs('#form-add-book').addEventListener('submit', async (e) => {

@@ -128,9 +128,21 @@ body { min-height: 100dvh; }
   padding: 0 0 calc(72px + var(--safe-bottom));
   overflow-y: auto; -webkit-overflow-scrolling: touch;
 }
-.view { display: none; padding: 20px 16px 24px; animation: view-in .35s cubic-bezier(.22,1,.36,1); }
+.view { display: none; padding: 20px 16px 24px; animation: view-in .4s cubic-bezier(.22,1,.36,1); }
 .view.active { display: block; }
-@keyframes view-in { from { opacity: 0; transform: translateY(12px); } }
+@keyframes view-in { from { opacity: 0; transform: translateY(16px); } }
+
+/* カードのスタガーアニメーション */
+.view.active .card { animation: card-stagger .4s cubic-bezier(.22,1,.36,1) both; }
+.view.active .card:nth-child(1) { animation-delay: .05s; }
+.view.active .card:nth-child(2) { animation-delay: .1s; }
+.view.active .card:nth-child(3) { animation-delay: .15s; }
+.view.active .card:nth-child(4) { animation-delay: .2s; }
+.view.active .card:nth-child(5) { animation-delay: .25s; }
+.view.active .card:nth-child(6) { animation-delay: .3s; }
+.view.active .card:nth-child(7) { animation-delay: .35s; }
+.view.active .card:nth-child(8) { animation-delay: .4s; }
+@keyframes card-stagger { from { opacity: 0; transform: translateY(10px); } }
 
 /* ============================================
    ホーム
@@ -151,21 +163,21 @@ body { min-height: 100dvh; }
 
 /* レシート撮影ヒーロー */
 .capture-hero {
-  display: block; margin-bottom: 16px; cursor: pointer;
+  display: block; margin-bottom: 8px; cursor: pointer;
   animation: hero-in .5s cubic-bezier(.22,1,.36,1) .1s both;
 }
 @keyframes hero-in { from { opacity: 0; transform: translateY(16px) scale(.95); } }
 
 .capture-hero-inner {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 12px; padding: 32px 20px; border-radius: 20px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 28px 20px; border-radius: 20px;
   background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
   color: #fff; position: relative; overflow: hidden;
-  transition: transform .2s; box-shadow: 0 8px 30px rgba(99,102,241,.3);
+  transition: transform .25s cubic-bezier(.22,1,.36,1), box-shadow .25s;
+  box-shadow: 0 8px 30px rgba(99,102,241,.3);
 }
-.capture-hero:active .capture-hero-inner { transform: scale(.97); }
-.capture-hero-inner svg { width: 40px; height: 40px; stroke-width: 1.5; }
-.capture-hero-inner span { font-size: 16px; font-weight: 700; }
+.capture-hero:active .capture-hero-inner { transform: scale(.95); box-shadow: 0 4px 16px rgba(99,102,241,.25); }
+.capture-hero-inner svg { width: 36px; height: 36px; stroke-width: 1.5; }
 .capture-hero-glow {
   position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
   background: radial-gradient(circle, rgba(255,255,255,.15) 0%, transparent 60%);
@@ -173,6 +185,19 @@ body { min-height: 100dvh; }
   pointer-events: none;
 }
 @keyframes glow-move { 0%,100%{transform:translate(0,0)} 50%{transform:translate(30px,-20px)} }
+
+/* ギャラリーアイコン（小さく、テキスト無し） */
+.gallery-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; margin: 0 auto 16px;
+  border-radius: 50%; cursor: pointer;
+  background: var(--bg); border: 1.5px solid var(--border);
+  transition: all .2s cubic-bezier(.22,1,.36,1);
+  animation: hero-in .5s cubic-bezier(.22,1,.36,1) .2s both;
+}
+.gallery-icon svg { width: 20px; height: 20px; stroke: var(--text3); transition: stroke .2s; }
+.gallery-icon:active { transform: scale(.9); background: var(--pri-bg); border-color: var(--pri); }
+.gallery-icon:active svg { stroke: var(--pri); }
 
 /* サブアクション */
 .sub-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 28px; }
@@ -228,13 +253,18 @@ body { min-height: 100dvh; }
 
 /* 税額ヒーロー */
 .tax-hero {
-  text-align: center; padding: 28px 20px; margin-bottom: 16px;
+  text-align: center; padding: 32px 20px; margin-bottom: 16px;
   background: linear-gradient(135deg, #6366f1, #8b5cf6); border-radius: var(--radius);
-  color: #fff; box-shadow: 0 4px 20px rgba(99,102,241,.3);
+  color: #fff; box-shadow: 0 8px 30px rgba(99,102,241,.3);
+  animation: hero-in .5s cubic-bezier(.22,1,.36,1);
 }
-.tax-hero-label { font-size: 12px; opacity: .8; margin-bottom: 4px; }
-.tax-hero-val { font-size: 36px; font-weight: 900; letter-spacing: -1px; }
+.tax-hero-label { font-size: 11px; opacity: .7; margin-bottom: 6px; letter-spacing: 1px; text-transform: uppercase; }
+.tax-hero-val { font-size: 40px; font-weight: 900; letter-spacing: -1.5px; animation: val-count .6s cubic-bezier(.22,1,.36,1) .2s both; }
+@keyframes val-count { from { opacity: 0; transform: translateY(12px); } }
 .tax-hero-rate { font-size: 13px; margin-top: 6px; opacity: .85; }
+
+/* フローカード */
+.card-flow { padding: 16px 20px; }
 
 /* 所得フロー */
 .tax-flow {
@@ -299,20 +329,28 @@ body { min-height: 100dvh; }
 .ei-saving-val { font-size: 14px; font-weight: 700; color: var(--green); }
 .ei-saving-rate { font-size: 11px; color: var(--text3); }
 
-/* 節税ヒント */
+/* 節税提案 */
 .tax-tip {
-  padding: 12px; margin-bottom: 8px; background: var(--bg); border-radius: var(--radius-sm);
-  border-left: 3px solid var(--green);
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 16px; margin-bottom: 8px; background: var(--card); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow); border-left: 3px solid var(--green);
+  animation: card-pop .35s cubic-bezier(.22,1,.36,1) both;
+  transition: transform .15s;
 }
+.tax-tip:active { transform: scale(.98); }
 .tax-tip:last-child { margin-bottom: 0; }
-.tax-tip-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.tax-tip-body { flex: 1; min-width: 0; }
+.tax-tip-head { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
 .tax-tip-category { font-size: 13px; font-weight: 600; }
-.tax-tip-saving { font-size: 14px; font-weight: 700; color: var(--green); }
-.tax-tip-desc { font-size: 12px; color: var(--text2); line-height: 1.5; }
-.tax-tip-rate { font-size: 11px; color: var(--text3); margin-top: 3px; }
+.tax-tip-saving { font-size: 18px; font-weight: 800; color: var(--green); white-space: nowrap; flex-shrink: 0; }
+.tax-tip-desc { font-size: 12px; color: var(--text3); }
+.tax-tip-rate { display: none; }
 .tax-bracket-hint {
-  padding: 12px; margin-top: 10px; background: #fffbeb; border: 1px solid #fde68a;
-  border-radius: var(--radius-sm); font-size: 13px; color: #92400e; line-height: 1.6;
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px; margin-bottom: 12px;
+  background: linear-gradient(135deg, #fef3c7, #fde68a); border: none;
+  border-radius: var(--radius-sm); font-size: 13px; color: #92400e; line-height: 1.5;
+  box-shadow: var(--shadow); animation: card-pop .35s cubic-bezier(.22,1,.36,1) both;
 }
 
 /* 控除・減価償却リスト */
@@ -770,12 +808,12 @@ body { min-height: 100dvh; }
   flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
   padding: 10px 0 8px; border: none; background: none;
   font-size: 10px; font-weight: 600; color: var(--text3); cursor: pointer;
-  font-family: var(--font); transition: color .2s;
+  font-family: var(--font); transition: color .25s, transform .15s;
 }
-.bnav-item svg { width: 22px; height: 22px; transition: all .2s; }
+.bnav-item svg { width: 22px; height: 22px; transition: all .25s cubic-bezier(.22,1,.36,1); }
 .bnav-item.active { color: var(--pri); }
-.bnav-item.active svg { stroke-width: 2.5; }
-.bnav-item:active { opacity: .7; }
+.bnav-item.active svg { stroke-width: 2.5; transform: scale(1.1); }
+.bnav-item:active { transform: scale(.9); }
 
 /* ============================================
    オーバーレイ / モーダル
@@ -1164,63 +1202,36 @@ body { min-height: 100dvh; }
 .edit-meta-status-approved { color: var(--green); }
 .edit-meta-status-rejected { color: var(--red); }
 
-/* ============================================
-   レシート取り込みボタン
-   ============================================ */
-.receipt-actions {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
-  padding: 0 16px; margin-bottom: 16px;
+/* レシートエクスポート（設定画面） */
+.receipt-export-row {
+  display: flex; align-items: center; gap: 8px;
 }
-.capture-hero, .gallery-hero {
-  display: block; cursor: pointer;
-}
-.capture-hero { grid-column: 1; }
-.gallery-hero { grid-column: 2; }
-.gallery-hero-inner {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 6px; padding: 20px 12px;
-  background: var(--card); border: 2px dashed var(--border); border-radius: var(--radius);
-  color: var(--pri); font-size: 14px; font-weight: 600;
-  transition: all .2s;
-}
-.gallery-hero-inner svg { width: 28px; height: 28px; stroke: var(--pri); }
-.gallery-hero-inner:active { transform: scale(.97); background: var(--pri-bg); }
-.capture-hero-inner {
-  gap: 6px; padding: 20px 12px;
-}
-.capture-hero-inner span, .gallery-hero-inner span {
-  font-size: 13px;
-}
+.receipt-export-row .fi-sm { flex: 1; }
+.receipt-sep { color: var(--text3); font-size: 14px; }
 
 /* 利益課税行 */
 .tf-tax-profit {
-  background: #fef9c3 !important; border-left: 3px solid #fbbf24;
-  font-size: 13px; opacity: 0.85;
+  background: #fefce8; border-left: 3px solid #fbbf24; padding-left: 8px;
+  font-size: 13px; opacity: 0.8; border-radius: 6px; margin: 2px -6px;
 }
 .tf-val.tax-profit { color: #92400e !important; }
 
-/* ============================================
-   期間選択バー
-   ============================================ */
-.rpt-period-bar {
-  display: flex; align-items: flex-end; gap: 8px; padding: 0 16px 8px;
-}
-.rpt-period-field { flex: 1; }
-.rpt-period-field label {
-  display: block; font-size: 11px; color: var(--text3); font-weight: 500; margin-bottom: 2px;
-}
-.rpt-period-sep {
-  font-size: 14px; color: var(--text3); padding-bottom: 8px;
-}
+/* fi-sm */
 .fi-sm {
   padding: 8px 10px !important; font-size: 13px !important;
 }
-.rpt-action-bar {
-  display: flex; gap: 8px; padding: 0 16px 12px;
+
+/* 分析トグル */
+.analytics-toggle {
+  display: flex; justify-content: center; padding: 4px 0 12px;
 }
-.rpt-action-bar .btn-outline {
-  flex: 1; font-size: 13px; padding: 8px;
+.btn-analytics-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 20px; border: 1.5px solid var(--border); border-radius: 999px;
+  background: var(--card); color: var(--text3); font-size: 13px; font-weight: 600;
+  font-family: var(--font); cursor: pointer; transition: all .2s;
 }
+.btn-analytics-toggle:active { transform: scale(.95); background: var(--pri-bg); color: var(--pri); border-color: var(--pri); }
 
 /* ============================================
    分析セクション
