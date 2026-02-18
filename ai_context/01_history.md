@@ -263,3 +263,29 @@ receipt_list.blade.php
 
 ■結果
 完了
+
+---
+
+【2026-02-18】
+
+■種別
+コミット / プッシュ / デプロイ
+
+■内容
+ai_context ドキュメント変更分のコミット・プッシュ・本番デプロイを実施。
+
+- コミット: 7cf6ec8（Docs: 運用エージェント向け手順書を追加・憲法更新）
+- push: origin/main へ反映
+- bash deploy.sh → PM2 tax (id:4) online 確認
+- 検証①〜⑤ 全通過（HTTP 200 / キャッシュ app.js?v=20260218b）
+
+■理由
+ai_context 3ファイル（00, 01, 02）の変更を本番に反映するため
+
+■対象
+- ai_context/00_constitution.md
+- ai_context/01_history.md
+- ai_context/02_operations.md
+
+■結果
+完了 / コミット: 7cf6ec8 / デプロイ済み
