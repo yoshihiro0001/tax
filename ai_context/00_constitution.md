@@ -13,8 +13,10 @@
 
 /ai_context/00_constitution.md
 /ai_context/01_history.md
+/ai_context/02_operations.md（デプロイ・Git・運用手順）
 
 現在の状態と過去の判断を把握してから作業すること。
+**特にデプロイ・Git操作・エラーチェックを行う場合は、02_operations.md を必ず最初に読むこと。**
 
 ---
 
