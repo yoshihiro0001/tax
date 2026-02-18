@@ -169,7 +169,27 @@ receipt_list.blade.php
 - server.js, public/app.js, public/index.html, public/style.css, package.json
 
 ■結果
-- コミット・プッシュ: 完了（3475b64 → 92f2d97 → fad4cca）
+- コミット・プッシュ: 完了（3475b64 → 92f2d97 → fad4cca → 3750601）
 - デプロイ: 完了（PM2 tax-tool online 確認済み）
 - 本番URL: https://fashionhoteljoy.com/tax
 - SSH公開鍵認証: 設定完了（ssh-copy-id root@fashionhoteljoy.com）→ 以降、AIが deploy.sh を自動実行可能
+
+---
+
+【2026-02-18】
+
+■種別
+バグ修正
+
+■内容
+レポート画面でエラー "Cannot read properties of undefined (reading 'totalComprehensiveTax')" を修正
+- `t.comprehensiveTaxDetail.totalComprehensiveTax` → `t.comprehensiveTaxDetail?.totalComprehensiveTax` に変更（?.オプショナルチェーン）
+
+■理由
+旧サーバーの /api/tax-simulation レスポンスに comprehensiveTaxDetail が含まれていなかった場合に発生するTypeError。null チェックを追加して防御的に対処。
+
+■対象
+- public/app.js（853行目）
+
+■結果
+完了 / コミット: 9af9b7b / デプロイ済み
