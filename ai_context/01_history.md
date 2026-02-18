@@ -147,3 +147,27 @@ receipt_list.blade.php
 - サマリー・分析のみ任意期間対応
 - tax_profit は expenses テーブルに保存するが、集計では除外するフィルタ方式を採用
 - 画像圧縮は不可逆（原本非保存）= ストレージ最小化を最優先
+
+---
+
+【2026-02-18】
+
+■種別
+エラーチェック / コミット / プッシュ / デプロイ対応
+
+■内容
+- server.js・app.js の構文チェック（node --check）→ エラーなし
+- sharp・archiver モジュールのロード確認 → OK
+- 成功画面ボタン（「もう1枚撮る」「ホームへ」）テキスト確認 → HTML・CSS ともに正常（text あり）
+- git add / commit / push → コミットハッシュ: 3475b64
+- 本番デプロイ（bash deploy.sh）→ SSH公開鍵認証がCursorエージェント環境に存在しないため自動実行不可。ユーザーがターミナルで `bash deploy.sh` を手動実行する必要あり
+
+■理由
+- 大規模変更後のエラー確認・本番反映のため
+
+■対象
+- server.js, public/app.js, public/index.html, public/style.css, package.json
+
+■結果
+- コミット・プッシュ: 完了（3475b64）
+- デプロイ: 手動実行待ち（SSH鍵認証が必要）
