@@ -169,5 +169,6 @@ receipt_list.blade.php
 - server.js, public/app.js, public/index.html, public/style.css, package.json
 
 ■結果
-- コミット・プッシュ: 完了（3475b64）
-- デプロイ: 手動実行待ち（SSH鍵認証が必要）
+- コミット・プッシュ: 完了（3475b64 → 92f2d97）
+- デプロイ: 完了（ユーザーが手動実行。PM2 tax-tool online 確認済み）
+- 本番URL: https://fashionhoteljoy.com/tax
