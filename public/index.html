@@ -13,7 +13,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=20260218b">
 </head>
 <body>
   <div id="toast-container"></div>
@@ -81,15 +81,24 @@
           </div>
         </div>
 
-        <!-- レシート撮影ヒーロー -->
-        <label class="capture-hero" for="receipt-input">
-          <input type="file" id="receipt-input" accept="image/*" capture="environment" class="sr-only">
-          <div class="capture-hero-glow"></div>
-          <div class="capture-hero-inner">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-            <span>レシートを撮影</span>
-          </div>
-        </label>
+        <!-- レシート取り込み -->
+        <div class="receipt-actions">
+          <label class="capture-hero" for="receipt-input">
+            <input type="file" id="receipt-input" accept="image/*" capture="environment" class="sr-only">
+            <div class="capture-hero-glow"></div>
+            <div class="capture-hero-inner">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+              <span>撮影</span>
+            </div>
+          </label>
+          <label class="gallery-hero" for="gallery-input">
+            <input type="file" id="gallery-input" accept="image/*" multiple class="sr-only">
+            <div class="gallery-hero-inner">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+              <span>写真から</span>
+            </div>
+          </label>
+        </div>
 
         <div class="sub-actions">
           <button class="btn-sub" id="btn-add-income">
@@ -171,6 +180,7 @@
             <div class="tf-row tf-tappable" id="tf-income-row"><span>総合課税の収入</span><span class="tf-val income" id="rpt-income">¥0</span><span class="tf-arrow">›</span></div>
             <div class="tf-op">−</div>
             <div class="tf-row tf-tappable" id="tf-expense-row"><span>経費合計</span><span class="tf-val expense" id="rpt-expense">¥0</span><span class="tf-arrow">›</span></div>
+            <div class="tf-row tf-tax-profit" id="tf-tax-profit-row" style="display:none"><span>利益課税（経費外）</span><span class="tf-val tax-profit">¥0</span></div>
             <div class="tf-op">−</div>
             <div class="tf-row"><span>減価償却費</span><span class="tf-val" id="rpt-depreciation">¥0</span></div>
             <div class="tf-eq"></div>
@@ -602,6 +612,6 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=20260218b"></script>
 </body>
 </html>

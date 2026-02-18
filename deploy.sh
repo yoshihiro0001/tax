@@ -9,7 +9,7 @@ set -e
 # --- 設定 ---
 SERVER="fashionhoteljoy.com"
 USER="root"  # サーバーのSSHユーザー名（必要に応じて変更）
-REMOTE_DIR="/var/www/tax-tool"
+REMOTE_DIR="/var/www/tax"
 SSH_TARGET="${USER}@${SERVER}"
 
 echo ""
@@ -31,7 +31,7 @@ rsync -avz --progress \
 echo ""
 echo "⚙️  リモートセットアップ中..."
 ssh ${SSH_TARGET} << 'REMOTE_SCRIPT'
-  cd /var/www/tax-tool
+  cd /var/www/tax
 
   # ディレクトリ作成
   mkdir -p data data/backups uploads
@@ -39,12 +39,12 @@ ssh ${SSH_TARGET} << 'REMOTE_SCRIPT'
   # 依存パッケージインストール
   npm install --production
 
-  # PM2で再起動 (初回は start)
-  if pm2 list | grep -q "tax-tool"; then
-    pm2 restart tax-tool
-    echo "✅ PM2再起動完了"
+  # PM2で再起動（プロセス名: tax）
+  if pm2 list | grep -q " tax "; then
+    pm2 restart tax
+    echo "✅ PM2再起動完了 (tax)"
   else
-    pm2 start server.js --name tax-tool
+    pm2 start server.js --name tax
     pm2 save
     echo "✅ PM2初回起動完了"
   fi
