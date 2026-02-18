@@ -850,7 +850,7 @@ const App = {
       // ヒーロー
       qs('#tax-total').textContent = `¥${t.tax.totalTax.toLocaleString()}`;
       const heroSub = [];
-      if (t.comprehensiveTaxDetail.totalComprehensiveTax > 0) heroSub.push(`総合課税 ¥${t.comprehensiveTaxDetail.totalComprehensiveTax.toLocaleString()}`);
+      if (t.comprehensiveTaxDetail?.totalComprehensiveTax > 0) heroSub.push(`総合課税 ¥${t.comprehensiveTaxDetail.totalComprehensiveTax.toLocaleString()}`);
       if (t.tax.separateTax > 0) heroSub.push(`分離課税 ¥${t.tax.separateTax.toLocaleString()}`);
       qs('#tax-hero-sub').textContent = heroSub.join(' ＋ ');
 
