@@ -380,3 +380,33 @@ UI/UX大幅改善・設計思想一新変更を本番に反映するため
 
 ■結果
 完了 / コミット: 80e1792 / デプロイ済み
+
+---
+
+【2026-02-18】
+
+■種別
+バグ修正 / UI修正
+
+■内容
+スマホでの2つのレイアウト問題を修正：
+
+1. **日付フィールドのはみ出し**
+   - 収入・経費モーダルで `input[type=date]` がコンテナから右にはみ出す
+   - `.fi` に `min-width: 0` を追加（iOS Safari の intrinsic 最小幅を上書き）
+   - `.modal-sheet` / `.confirm-sheet` に `overflow-x: hidden` を追加
+
+2. **横スクロールで余白が出る問題**
+   - スマホで右スワイプすると画面外に余白が出てページが動く
+   - `html, body` に `overflow-x: hidden` を追加
+   - `.app-main` に `overflow-x: hidden` を追加
+
+■理由
+スマホ操作時のストレス解消。横スクロールで画面がずれると操作感が悪くなるため。
+
+■対象
+- public/style.css（overflow-x / min-width 追加）
+- public/index.html（キャッシュバスティング: v=20260218d）
+
+■結果
+完了 / コミット: 80e0239 / デプロイ済み（HTTP 200 / style.css?v=20260218d 確認）
