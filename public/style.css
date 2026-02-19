@@ -329,29 +329,47 @@ body { min-height: 100dvh; }
 .ei-saving-val { font-size: 14px; font-weight: 700; color: var(--green); }
 .ei-saving-rate { font-size: 11px; color: var(--text3); }
 
-/* 節税提案 */
-.tax-tip {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 14px 16px; margin-bottom: 8px; background: var(--card); border-radius: var(--radius-sm);
-  box-shadow: var(--shadow); border-left: 3px solid var(--green);
-  animation: card-pop .35s cubic-bezier(.22,1,.36,1) both;
-  transition: transform .15s;
-}
-.tax-tip:active { transform: scale(.98); }
-.tax-tip:last-child { margin-bottom: 0; }
-.tax-tip-body { flex: 1; min-width: 0; }
-.tax-tip-head { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
-.tax-tip-category { font-size: 13px; font-weight: 600; }
-.tax-tip-saving { font-size: 18px; font-weight: 800; color: var(--green); white-space: nowrap; flex-shrink: 0; }
-.tax-tip-desc { font-size: 12px; color: var(--text3); }
-.tax-tip-rate { display: none; }
-.tax-bracket-hint {
+/* 節税アドバイス（グループ×段階） */
+.adv-summary {
   display: flex; align-items: center; gap: 10px;
   padding: 14px 16px; margin-bottom: 12px;
-  background: linear-gradient(135deg, #fef3c7, #fde68a); border: none;
-  border-radius: var(--radius-sm); font-size: 13px; color: #92400e; line-height: 1.5;
-  box-shadow: var(--shadow); animation: card-pop .35s cubic-bezier(.22,1,.36,1) both;
+  background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+  border-radius: var(--radius-sm); animation: card-pop .35s cubic-bezier(.22,1,.36,1) both;
 }
+.adv-summary-icon { font-size: 22px; }
+.adv-summary-text { font-size: 14px; font-weight: 700; color: #065f46; }
+
+.adv-group {
+  background: var(--card); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow); margin-bottom: 8px; overflow: hidden;
+  animation: card-pop .35s cubic-bezier(.22,1,.36,1) both;
+}
+.adv-group-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px; cursor: pointer; transition: background .15s;
+}
+.adv-group-head:active { background: var(--bg); }
+.adv-group-icon { font-size: 20px; flex-shrink: 0; }
+.adv-group-info { flex: 1; min-width: 0; }
+.adv-group-title { font-size: 14px; font-weight: 700; color: var(--text); }
+.adv-group-desc { font-size: 12px; color: var(--text3); margin-top: 2px; }
+.adv-group-toggle {
+  font-size: 18px; color: var(--text3); transition: transform .2s; flex-shrink: 0;
+}
+
+.adv-steps {
+  padding: 0 16px 14px; display: flex; flex-direction: column; gap: 6px;
+  border-top: 1px solid var(--border);
+}
+.adv-step {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; background: var(--bg); border-radius: var(--radius-xs);
+  font-size: 13px;
+}
+.adv-step-add { font-weight: 600; color: var(--text2); }
+.adv-step-arrow { color: var(--text3); }
+.adv-step-saving { font-weight: 800; color: var(--green); }
+.adv-step-label { color: var(--text3); font-size: 12px; }
 
 /* 控除・減価償却リスト */
 .ded-item, .dep-item {

@@ -499,5 +499,48 @@ UI/UX大幅改善・設計思想一新変更を本番に反映するため
 ■対象
 - server.js, public/app.js, public/index.html, public/style.css
 
-■結果
+■結果(税エンジン強化)
 完了 / コミット: e957ad4 / デプロイ済み
+
+---
+
+【2026-02-19b】
+
+■種別
+設計変更（税計算・カテゴリ・提案の全面リニューアル）
+
+■内容
+
+### 1. カテゴリ統合（14→10カテゴリ）
+旧→新の変換をDBマイグレーションで自動実行:
+- travel/communication/supplies/advertising/fees/misc → general(一般経費)
+- outsourcing → labor(外注・人件費)
+- home_office → rent(家賃・光熱費)
+- depreciation → asset(固定資産)
+- tax_cost → tax_deductible(租税公課)
+- tax_profit → tax_non_deductible(税金非経費)
+- 新規追加: cogs(仕入・原価)
+
+### 2. 個人/法人分離
+- books.entity_type (individual/corporate) + fiscal_start_month 追加
+- 法人税エンジン: calcCorporateTax/calcCorpResidentTax/calcCorpBusinessTax/calcCorpSpecialBizTax
+- 法人の支払スケジュール: 決算2ヶ月後 + 中間申告（法人税20万超）
+- 帳簿作成モーダルに個人/法人選択UI + 期首月選択
+
+### 3. 提案システム全面書き換え
+旧: カテゴリ単位の個別tips
+新: グループ×段階（+10万/+50万/+100万ごとの節税額を表示）
+個人向け: 事業支出/家賃按分/保険/医療費控除/税率帯ダウン/全対策サマリー
+法人向け: 損金増加/法人税率ダウン(800万境界)/役員報酬最適化
+
+### 4. 「経費」→「支出」全面改称
+HTML/JS全ファイルのUIテキストを変更
+
+■対象
+- server.js（DB migration, カテゴリ統合, 法人税engine, 提案rewrite, bookAccess拡張）
+- public/app.js（categories, 経費→支出, renderAdviceGroups, getReportPeriod法人対応）
+- public/index.html（経費→支出, 帳簿モーダル個人/法人選択）
+- public/style.css（旧tips→新adv-groupスタイル）
+
+■結果
+完了 / 未デプロイ

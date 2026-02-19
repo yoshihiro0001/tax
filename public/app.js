@@ -15,22 +15,18 @@ const App = {
   editingItem: null,
 
   categories: [
-    { id: 'travel', name: '旅費交通費', icon: '🚃' },
-    { id: 'communication', name: '通信費', icon: '📱' },
-    { id: 'supplies', name: '消耗品費', icon: '📦' },
-    { id: 'advertising', name: '広告宣伝費', icon: '📢' },
+    { id: 'cogs', name: '仕入・原価', icon: '📦' },
+    { id: 'labor', name: '外注・人件費', icon: '🤝' },
+    { id: 'rent', name: '家賃・光熱費', icon: '🏠' },
+    { id: 'general', name: '一般経費', icon: '📋' },
     { id: 'entertainment', name: '接待交際費', icon: '🍽' },
-    { id: 'outsourcing', name: '外注工賃', icon: '🤝' },
-    { id: 'fees', name: '支払手数料', icon: '🏦' },
-    { id: 'home_office', name: '家事按分', icon: '🏠' },
-    { id: 'depreciation', name: '減価償却費', icon: '💻' },
+    { id: 'insurance', name: '保険・年金', icon: '🛡' },
     { id: 'medical', name: '医療費', icon: '🏥' },
-    { id: 'insurance', name: '保険料', icon: '🛡' },
-    { id: 'tax_cost', name: '租税公課', icon: '🏛' },
-    { id: 'tax_profit', name: '利益課税', icon: '📋' },
-    { id: 'misc', name: '雑費', icon: '📌' }
+    { id: 'tax_deductible', name: '租税公課', icon: '🏛' },
+    { id: 'tax_non_deductible', name: '税金(非経費)', icon: '📋' },
+    { id: 'asset', name: '固定資産', icon: '💻' },
   ],
-  isTaxProfit(cat) { return cat === 'tax_profit'; },
+  isTaxProfit(cat) { return cat === 'tax_non_deductible'; },
 
   categoryName(id) {
     const c = this.categories.find(c => c.id === id);
@@ -635,11 +631,11 @@ const App = {
     qs('#success-summary').textContent = `${desc || catName} ¥${parseInt(amount).toLocaleString()}`;
     this.createConfetti();
 
-    // 高額経費→減価償却の自動提案
+    // 高額支出→減価償却の自動提案
     const amt = parseInt(amount);
     if (amt >= 100000 && category === 'depreciation') {
       setTimeout(() => {
-        if (confirm(`¥${amt.toLocaleString()} の経費が登録されました。\n\nこれは減価償却資産として登録しますか？\n（PC: 4年, 車両: 6年, 家具: 8年）`)) {
+        if (confirm(`¥${amt.toLocaleString()} の支出が登録されました。\n\nこれは減価償却資産として登録しますか？\n（PC: 4年, 車両: 6年, 家具: 8年）`)) {
           const life = prompt('耐用年数（年）:', '4');
           if (life) {
             this.api('/api/depreciations', { method: 'POST', body: JSON.stringify({
@@ -786,10 +782,16 @@ const App = {
 
   getReportPeriod() {
     const y = qs('#report-year').value;
+    const book = this.currentBook;
+    const fm = book?.fiscal_start_month || 1;
+    if (fm === 1) return { year: y, startDate: `${y}-01-01`, endDate: `${y}-12-31` };
+    const startY = parseInt(y);
+    const endM = fm - 1;
+    const endY = startY + 1;
     return {
       year: y,
-      startDate: `${y}-01-01`,
-      endDate: `${y}-12-31`
+      startDate: `${startY}-${String(fm).padStart(2,'0')}-01`,
+      endDate: `${endY}-${String(endM).padStart(2,'0')}-${new Date(endY, endM, 0).getDate()}`
     };
   },
 
@@ -836,7 +838,7 @@ const App = {
         incEmpty.style.display = '';
       }
 
-      // 経費内訳バー（tax_profitは別スタイル）
+      // 支出内訳バー
       const bdWrap = qs('#rpt-breakdown');
       const expEmpty = qs('#rpt-expense-empty');
       if (d.breakdown.length > 0) {
@@ -847,7 +849,7 @@ const App = {
           const ratioLabel = b.incomeRatio ? `${b.incomeRatio}%` : '';
           return `<div class="bd-item ${isTp ? 'bd-tax-profit' : ''}" data-category="${b.category}">
             <div class="bd-head">
-              <span class="bd-name">${this.categoryIcon(b.category)} ${this.categoryName(b.category)}${isTp ? ' <span class="bd-tag-tp">経費外</span>' : ''}</span>
+              <span class="bd-name">${this.categoryIcon(b.category)} ${this.categoryName(b.category)}${isTp ? ' <span class="bd-tag-tp">非経費</span>' : ''}</span>
               <span class="bd-val">¥${b.total.toLocaleString()} <span class="bd-ratio">${ratioLabel}</span> <span class="bd-arrow">›</span></span>
             </div>
             <div class="bd-bar"><div class="bd-fill ${isTp ? 'tax-profit' : ''}" style="width:${(b.total/maxBd*100).toFixed(1)}%"></div></div>
@@ -956,16 +958,16 @@ const App = {
       bdHtml += `<div class="tax-bd-row total"><span>年間税負担合計</span><span class="tax-bd-val">¥${(t.totalAllTaxes || tax.totalTax || 0).toLocaleString()}</span></div>`;
       qs('#tax-breakdown').innerHTML = bdHtml;
 
-      // 経費の節税効果
+      // 支出の節税効果
       if (t.expenseTaxImpact && t.expenseTaxImpact.length > 0) {
         qs('#expense-impact-card').style.display = '';
-        qs('#expense-impact-desc').textContent = `現在の実効税率は約${t.expenseTaxImpact[0].effectiveRate}%。経費1万円ごとに約¥${Math.floor(t.expenseTaxImpact[0].effectiveRate * 100)}の節税になります。`;
+        qs('#expense-impact-desc').textContent = `実効税率 約${t.expenseTaxImpact[0].effectiveRate}%。支出1万円で約¥${Math.floor(t.expenseTaxImpact[0].effectiveRate * 100)}の節税。`;
         qs('#expense-impact').innerHTML = t.expenseTaxImpact.map(e => `
           <div class="ei-item">
             <span class="ei-icon">${this.categoryIcon(e.category)}</span>
             <div class="ei-body">
               <div class="ei-name">${this.categoryName(e.category)}</div>
-              <div class="ei-detail">経費 ¥${e.total.toLocaleString()} (${e.count}件)</div>
+              <div class="ei-detail">¥${e.total.toLocaleString()} (${e.count}件)</div>
             </div>
             <div class="ei-saving">
               <div class="ei-saving-val">-¥${e.taxSaving.toLocaleString()}</div>
@@ -977,36 +979,63 @@ const App = {
         qs('#expense-impact-card').style.display = 'none';
       }
 
-      // 節税提案
-      if ((t.tips || []).length > 0 || t.nextBracketInfo) {
-        qs('#tax-tips-card').style.display = '';
-        let tipsHtml = '';
-        if (t.nextBracketInfo && t.nextBracketInfo.expenseNeeded > 0) {
-          tipsHtml += `<div class="tax-bracket-hint">💎 経費+¥${t.nextBracketInfo.expenseNeeded.toLocaleString()}で税率 ${t.nextBracketInfo.currentRatePercent}%→${t.nextBracketInfo.lowerRatePercent}%</div>`;
-        }
-        tipsHtml += (t.tips || []).slice(0, 5).map(tip => {
-          const icon = this.categoryIcon(tip.category);
-          let desc = tip.hint || '';
-          if (tip.type === 'increase' && tip.currentAmount) desc = `現在¥${tip.currentAmount.toLocaleString()} → +¥${(tip.additionalExpense || 100000).toLocaleString()}`;
-          if (tip.type === 'medical_threshold') desc = tip.hint;
-          return `<div class="tax-tip">
-            <div class="tax-tip-body">
-              <div class="tax-tip-head"><span class="tax-tip-category">${icon} ${tip.label}</span></div>
-              <div class="tax-tip-desc">${desc}</div>
-            </div>
-            <span class="tax-tip-saving">-¥${(tip.saving || 0).toLocaleString()}</span>
-          </div>`;
-        }).join('');
-        qs('#tax-tips').innerHTML = tipsHtml;
-      } else {
-        qs('#tax-tips-card').style.display = 'none';
-      }
+      // 節税アドバイス（グループ×段階）
+      this.renderAdviceGroups(t.adviceGroups || []);
 
       // 控除一覧
       this.renderDeductions(t.deductions || [], y);
       // 減価償却一覧
       this.renderDepreciations(t.depreciationDetails || [], y);
     } catch (err) { this.toast(err.message, 'error'); }
+  },
+
+  renderAdviceGroups(groups) {
+    const wrap = qs('#tax-tips');
+    const card = qs('#tax-tips-card');
+    if (!groups || groups.length === 0) {
+      if (card) card.style.display = 'none';
+      return;
+    }
+    if (card) card.style.display = '';
+
+    wrap.innerHTML = groups.map(g => {
+      if (g.id === 'summary') {
+        return `<div class="adv-summary">
+          <span class="adv-summary-icon">${g.icon || '🎯'}</span>
+          <span class="adv-summary-text">${g.desc}</span>
+        </div>`;
+      }
+      const stepsHtml = (g.steps || []).map(s => {
+        if (s.note) return `<div class="adv-step"><span class="adv-step-label">${s.note}</span></div>`;
+        return `<div class="adv-step">
+          <span class="adv-step-add">+¥${(s.add || 0).toLocaleString()}</span>
+          <span class="adv-step-arrow">→</span>
+          <span class="adv-step-saving">-¥${(s.saving || 0).toLocaleString()}</span>
+        </div>`;
+      }).join('');
+
+      return `<div class="adv-group">
+        <div class="adv-group-head">
+          <span class="adv-group-icon">${g.icon || '📊'}</span>
+          <div class="adv-group-info">
+            <div class="adv-group-title">${g.title}</div>
+            <div class="adv-group-desc">${g.desc}</div>
+          </div>
+          <span class="adv-group-toggle">›</span>
+        </div>
+        <div class="adv-steps" style="display:none">${stepsHtml}</div>
+      </div>`;
+    }).join('');
+
+    wrap.querySelectorAll('.adv-group-head').forEach(h => {
+      h.addEventListener('click', () => {
+        const steps = h.nextElementSibling;
+        const toggle = h.querySelector('.adv-group-toggle');
+        const isOpen = steps.style.display !== 'none';
+        steps.style.display = isOpen ? 'none' : '';
+        toggle.textContent = isOpen ? '›' : '⌄';
+      });
+    });
   },
 
   renderPaymentSchedule(schedule) {
@@ -1132,7 +1161,7 @@ const App = {
     if (kind === 'income') {
       titleEl.textContent = incomeType ? `${this.incomeTypeIcon(incomeType)} ${this.incomeTypeName(incomeType)}` : '収入一覧';
     } else {
-      titleEl.textContent = category ? `${this.categoryIcon(category)} ${this.categoryName(category)}` : '経費一覧';
+      titleEl.textContent = category ? `${this.categoryIcon(category)} ${this.categoryName(category)}` : '支出一覧';
     }
     this.openOverlay('tx-list');
 
@@ -1207,7 +1236,7 @@ const App = {
         labels,
         datasets: [
           { label: '収入', data: incData, backgroundColor: 'rgba(34,197,94,.4)', borderRadius: 4 },
-          { label: '経費', data: expData, backgroundColor: 'rgba(239,68,68,.4)', borderRadius: 4 }
+          { label: '支出', data: expData, backgroundColor: 'rgba(239,68,68,.4)', borderRadius: 4 }
         ]
       },
       options: {
@@ -1243,7 +1272,7 @@ const App = {
         </div>
         <div class="an-kpi">
           <span class="an-kpi-val expense">¥${expenses.toLocaleString()}</span>
-          <span class="an-kpi-label">経費（税除く）</span>
+          <span class="an-kpi-label">支出（税除く）</span>
         </div>
         <div class="an-kpi">
           <span class="an-kpi-val ${profit >= 0 ? 'income' : 'expense'}">¥${profit.toLocaleString()}</span>
@@ -1252,16 +1281,16 @@ const App = {
       </div>
       <div class="an-rates">
         <div class="an-rate-item"><span class="an-rate-bar"><span class="an-rate-fill income" style="width:${Math.min(profitRate, 100)}%"></span></span><span class="an-rate-text">利益率 ${profitRate}%</span></div>
-        <div class="an-rate-item"><span class="an-rate-bar"><span class="an-rate-fill expense" style="width:${Math.min(expenseRate, 100)}%"></span></span><span class="an-rate-text">経費率 ${expenseRate}%</span></div>
+        <div class="an-rate-item"><span class="an-rate-bar"><span class="an-rate-fill expense" style="width:${Math.min(expenseRate, 100)}%"></span></span><span class="an-rate-text">支出率 ${expenseRate}%</span></div>
       </div>`;
 
     if (taxProfit > 0) {
-      html += `<div class="an-tax-profit-note">📋 利益課税（所得税・住民税等）: <strong>¥${taxProfit.toLocaleString()}</strong>　※経費合計には含まず</div>`;
+      html += `<div class="an-tax-profit-note">📋 利益課税（所得税・住民税等）: <strong>¥${taxProfit.toLocaleString()}</strong>　※支出合計には含まず</div>`;
     }
 
     // カテゴリ別ドーナツチャート風の割合表示
     if (expCats.length > 0) {
-      html += '<h4 class="an-section-title">カテゴリ別 経費割合 <span class="an-sub">（売上に対する比率）</span></h4>';
+      html += '<h4 class="an-section-title">カテゴリ別 支出割合 <span class="an-sub">（売上に対する比率）</span></h4>';
       html += '<div class="an-cat-list">';
       const colors = ['#6366f1','#22c55e','#f59e0b','#ef4444','#06b6d4','#8b5cf6','#ec4899','#14b8a6','#f97316','#84cc16','#64748b','#a855f7','#0ea5e9'];
       expCats.forEach((b, i) => {
@@ -1286,7 +1315,7 @@ const App = {
         ...d.monthlyExpense.map(m => m.month)
       ]);
       const sorted = [...allMonths].sort();
-      html += '<h4 class="an-section-title">月別サマリー</h4><div class="an-monthly-table"><table><thead><tr><th>月</th><th>売上</th><th>経費</th><th>利益</th><th>利益率</th></tr></thead><tbody>';
+      html += '<h4 class="an-section-title">月別サマリー</h4><div class="an-monthly-table"><table><thead><tr><th>月</th><th>売上</th><th>支出</th><th>利益</th><th>利益率</th></tr></thead><tbody>';
       sorted.forEach(m => {
         const mi = (d.monthlyIncome.find(i => i.month === m) || {}).total || 0;
         const me = (d.monthlyExpense.find(e => e.month === m) || {}).total || 0;
@@ -1335,7 +1364,7 @@ const App = {
             </div>
             <div class="ov-stats">
               <div class="ov-stat"><span class="ov-stat-val income">¥${b.incomeTotal.toLocaleString()}</span><span class="ov-stat-label">収入 (${b.incomeCount}件)</span></div>
-              <div class="ov-stat"><span class="ov-stat-val expense">¥${b.expenseTotal.toLocaleString()}</span><span class="ov-stat-label">経費 (${b.expenseCount}件)</span></div>
+              <div class="ov-stat"><span class="ov-stat-val expense">¥${b.expenseTotal.toLocaleString()}</span><span class="ov-stat-label">支出 (${b.expenseCount}件)</span></div>
               <div class="ov-stat"><span class="ov-stat-val neutral">${b.receiptCount}</span><span class="ov-stat-label">レシート</span></div>
             </div>
           </div>`;
@@ -1574,7 +1603,7 @@ const App = {
             <div class="aud-book-head"><span>${b.emoji} ${this.esc(b.name)}</span></div>
             <div class="aud-book-stats">
               <span>収入 ${b.incomeCount}件 (¥${b.incomeTotal.toLocaleString()})</span>
-              <span>経費 ${b.expenseCount}件 (¥${b.expenseTotal.toLocaleString()})</span>
+              <span>支出 ${b.expenseCount}件 (¥${b.expenseTotal.toLocaleString()})</span>
               <span>レシート ${b.receiptCount}枚 (${bStorage})</span>
             </div>
           </div>`;
@@ -1737,13 +1766,24 @@ const App = {
     qs('#btn-export-receipts')?.addEventListener('click', () => this.exportReceipts());
 
     // 帳簿追加
+    // 個人/法人切り替えで期首月を表示制御
+    const etSel = qs('#book-entity-type');
+    const fmGroup = qs('#fiscal-month-group');
+    if (etSel && fmGroup) {
+      etSel.addEventListener('change', () => {
+        fmGroup.style.display = etSel.value === 'corporate' ? '' : 'none';
+      });
+    }
+
     qs('#form-add-book').addEventListener('submit', async (e) => {
       e.preventDefault();
       const name = qs('#book-name').value.trim();
       const emojiEl = qs('#emoji-picker .ep.selected');
       const emoji = emojiEl ? emojiEl.dataset.e : '📒';
+      const entity_type = qs('#book-entity-type')?.value || 'individual';
+      const fiscal_start_month = entity_type === 'corporate' ? (parseInt(qs('#book-fiscal-month')?.value) || 4) : 1;
       try {
-        await this.api('/api/books', { method: 'POST', body: JSON.stringify({ name, emoji }) });
+        await this.api('/api/books', { method: 'POST', body: JSON.stringify({ name, emoji, entity_type, fiscal_start_month }) });
         const me = await this.api('/api/auth/me');
         this.books = me.books;
         this.closeOverlay('add-book');
@@ -1906,10 +1946,10 @@ const App = {
               <div class="mem-name">${this.esc(m.name)} ${roleBadge}</div>
               <div class="mem-email">${this.esc(m.email)}</div>
               <div class="mem-perms">
-                <span class="mem-perm ${m.can_input_expense ? 'on' : ''}">経費入力${permLabel(m.can_input_expense)}</span>
+                <span class="mem-perm ${m.can_input_expense ? 'on' : ''}">支出入力${permLabel(m.can_input_expense)}</span>
                 <span class="mem-perm ${m.can_input_income ? 'on' : ''}">収入入力${permLabel(m.can_input_income)}</span>
                 <span class="mem-perm ${m.can_view_income ? 'on' : ''}">収入閲覧${permLabel(m.can_view_income)}</span>
-                <span class="mem-perm ${m.can_view_all_expenses ? 'on' : ''}">全経費閲覧${permLabel(m.can_view_all_expenses)}</span>
+                <span class="mem-perm ${m.can_view_all_expenses ? 'on' : ''}">全支出閲覧${permLabel(m.can_view_all_expenses)}</span>
               </div>
             </div>
             <div class="mem-actions">
@@ -2118,7 +2158,7 @@ const App = {
       } catch (err) { this.toast(err.message, 'error'); }
     });
 
-    // 手動経費モーダル
+    // 手動支出モーダル
     qs('#close-manual').addEventListener('click', () => this.closeOverlay('manual'));
     this.buildCatChips('me-cats');
     qs('#form-manual-expense').addEventListener('submit', async (e) => {
@@ -2140,7 +2180,7 @@ const App = {
         this.closeOverlay('manual');
         qs('#form-manual-expense').reset();
         qs('#me-cats').querySelectorAll('.cat-chip').forEach(c => c.classList.remove('active'));
-        this.toast('経費を記録しました', 'success');
+        this.toast('支出を記録しました', 'success');
         this.loadDashboard();
       } catch (err) { this.toast(err.message, 'error'); }
     });
@@ -2237,7 +2277,7 @@ const App = {
 
       qs('#edit-id').value = item.id;
       qs('#edit-kind').value = kind;
-      qs('#edit-title').textContent = kind === 'income' ? '収入を編集' : '経費を編集';
+      qs('#edit-title').textContent = kind === 'income' ? '収入を編集' : '支出を編集';
       qs('#edit-date').value = item.date;
       qs('#edit-amount').value = item.amount;
       qs('#edit-desc').value = item.description || '';

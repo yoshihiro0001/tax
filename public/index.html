@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Keihi - シンプル経費管理</title>
+  <title>Keihi - シンプル税務管理</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#6366f1">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -13,7 +13,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <link rel="stylesheet" href="style.css?v=20260219a">
+  <link rel="stylesheet" href="style.css?v=20260219b">
 </head>
 <body>
   <div id="toast-container"></div>
@@ -23,7 +23,7 @@
     <div class="auth-card">
       <div class="auth-logo">K</div>
       <h1 class="auth-title">Keihi</h1>
-      <p class="auth-sub">シンプルな経費管理</p>
+      <p class="auth-sub">シンプルな税務管理</p>
 
       <form id="form-login" class="auth-form">
         <input type="email" id="login-email" placeholder="メールアドレス" required autocomplete="email">
@@ -72,7 +72,7 @@
       <section class="view active" id="view-home">
         <div class="home-summary">
           <div class="summary-item expense">
-            <span class="summary-label">今月の経費</span>
+            <span class="summary-label">今月の支出</span>
             <span class="summary-value" id="home-expense">¥0</span>
           </div>
           <div class="summary-item income">
@@ -101,7 +101,7 @@
           </button>
           <button class="btn-sub" id="btn-add-manual">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-            手動経費
+            手動入力
           </button>
         </div>
 
@@ -160,7 +160,7 @@
           <div class="tax-flow">
             <div class="tf-row tf-tappable" id="tf-income-row"><span>収入</span><span class="tf-val income" id="rpt-income">¥0</span><span class="tf-arrow">›</span></div>
             <div class="tf-op">−</div>
-            <div class="tf-row tf-tappable" id="tf-expense-row"><span>経費</span><span class="tf-val expense" id="rpt-expense">¥0</span><span class="tf-arrow">›</span></div>
+            <div class="tf-row tf-tappable" id="tf-expense-row"><span>支出</span><span class="tf-val expense" id="rpt-expense">¥0</span><span class="tf-arrow">›</span></div>
             <div class="tf-row tf-tax-profit" id="tf-tax-profit-row" style="display:none"><span>利益課税</span><span class="tf-val tax-profit">¥0</span></div>
             <div class="tf-op">−</div>
             <div class="tf-row"><span>減価償却</span><span class="tf-val" id="rpt-depreciation">¥0</span></div>
@@ -181,15 +181,15 @@
           <div id="tax-by-type"></div>
         </div>
 
-        <!-- 経費の節税効果 -->
+        <!-- 支出の節税効果 -->
         <div class="card" id="expense-impact-card" style="display:none">
           <p class="card-desc" id="expense-impact-desc"></p>
           <div id="expense-impact"></div>
         </div>
 
-        <!-- 経費内訳 -->
+        <!-- 支出内訳 -->
         <div class="card">
-          <h3 class="card-title">経費</h3>
+          <h3 class="card-title">支出</h3>
           <div id="rpt-breakdown" class="rpt-breakdown-section"></div>
           <div class="rpt-bd-empty" id="rpt-expense-empty" style="display:none">データなし</div>
         </div>
@@ -371,7 +371,7 @@
             <option value="9">9月</option><option value="10">10月</option><option value="11">11月</option><option value="12">12月</option>
           </select>
           <select id="hist-type" class="sel-sm">
-            <option value="">全種別</option><option value="income">収入</option><option value="expense">経費</option>
+            <option value="">全種別</option><option value="income">収入</option><option value="expense">支出</option>
           </select>
         </div>
         <div class="tx-list" id="hist-transactions"></div>
@@ -455,10 +455,10 @@
     </div>
   </div>
 
-  <!-- 手動経費モーダル -->
+  <!-- 手動支出モーダル -->
   <div class="overlay" id="overlay-manual" style="display:none">
     <div class="modal-sheet">
-      <div class="modal-head"><h3>経費を手動入力</h3><button class="btn-close" id="close-manual">&times;</button></div>
+      <div class="modal-head"><h3>支出を手動入力</h3><button class="btn-close" id="close-manual">&times;</button></div>
       <form id="form-manual-expense" class="modal-form">
         <div class="fg"><label>日付</label><input type="date" id="me-date" class="fi" required></div>
         <div class="fg"><label>金額</label><div class="fi-amt"><span>¥</span><input type="number" id="me-amount" class="fi" placeholder="0" inputmode="numeric" required></div></div>
@@ -498,6 +498,20 @@
       <div class="modal-head"><h3>帳簿を追加</h3><button class="btn-close" id="close-add-book">&times;</button></div>
       <form id="form-add-book" class="modal-form">
         <div class="fg"><label>帳簿名</label><input type="text" id="book-name" class="fi" placeholder="例: 会社A" required></div>
+        <div class="fg"><label>種別</label>
+          <select id="book-entity-type" class="fi">
+            <option value="individual">個人事業主</option>
+            <option value="corporate">法人</option>
+          </select>
+        </div>
+        <div class="fg" id="fiscal-month-group" style="display:none"><label>期首月</label>
+          <select id="book-fiscal-month" class="fi">
+            <option value="1">1月</option><option value="2">2月</option><option value="3">3月</option>
+            <option value="4" selected>4月</option><option value="5">5月</option><option value="6">6月</option>
+            <option value="7">7月</option><option value="8">8月</option><option value="9">9月</option>
+            <option value="10">10月</option><option value="11">11月</option><option value="12">12月</option>
+          </select>
+        </div>
         <div class="fg"><label>アイコン</label>
           <div class="emoji-picker" id="emoji-picker">
             <span class="ep selected" data-e="📒">📒</span><span class="ep" data-e="👤">👤</span><span class="ep" data-e="🏢">🏢</span><span class="ep" data-e="💼">💼</span><span class="ep" data-e="🏠">🏠</span><span class="ep" data-e="🎨">🎨</span><span class="ep" data-e="💡">💡</span><span class="ep" data-e="🚀">🚀</span>
@@ -570,7 +584,7 @@
     </div>
   </div>
 
-  <!-- 収入/経費 一覧モーダル -->
+  <!-- 収入/支出 一覧モーダル -->
   <div class="overlay" id="overlay-tx-list" style="display:none">
     <div class="modal-sheet modal-wide">
       <div class="modal-head"><h3 id="tx-list-title">一覧</h3><button class="btn-close" id="close-tx-list">&times;</button></div>
@@ -588,10 +602,10 @@
         <div class="member-add-title">メンバーを追加</div>
         <div class="fg"><input type="email" id="member-email" class="fi" placeholder="メールアドレスを入力"></div>
         <div class="member-perm-grid">
-          <label class="member-perm-item"><input type="checkbox" id="mp-expense-input" checked><span>経費入力</span></label>
+          <label class="member-perm-item"><input type="checkbox" id="mp-expense-input" checked><span>支出入力</span></label>
           <label class="member-perm-item"><input type="checkbox" id="mp-income-input"><span>収入入力</span></label>
           <label class="member-perm-item"><input type="checkbox" id="mp-income-view"><span>収入閲覧</span></label>
-          <label class="member-perm-item"><input type="checkbox" id="mp-expense-view"><span>全経費閲覧</span></label>
+          <label class="member-perm-item"><input type="checkbox" id="mp-expense-view"><span>全支出閲覧</span></label>
         </div>
         <div class="member-role-row">
           <label>権限レベル</label>
@@ -605,6 +619,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260219a"></script>
+  <script src="app.js?v=20260219b"></script>
 </body>
 </html>
