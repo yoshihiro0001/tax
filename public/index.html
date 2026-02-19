@@ -13,7 +13,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <link rel="stylesheet" href="style.css?v=20260219b">
+  <link rel="stylesheet" href="style.css?v=20260218c">
 </head>
 <body>
   <div id="toast-container"></div>
@@ -141,6 +141,9 @@
           <div id="tax-summary-bars"></div>
         </div>
 
+        <!-- 消費税の壁アラート -->
+        <div class="card cta-card" id="cta-card" style="display:none"></div>
+
         <!-- 節税提案 -->
         <div id="tax-tips-card" style="display:none">
           <div id="tax-tips"></div>
@@ -175,6 +178,12 @@
         <div class="card">
           <div id="tax-breakdown"></div>
         </div>
+
+        <!-- 欠損金繰越 -->
+        <div class="card carryover-card" id="carryover-card" style="display:none"></div>
+
+        <!-- 税務健全性スコア -->
+        <div class="card health-score-card" id="health-score-card" style="display:none"></div>
 
         <!-- 収入区分別 -->
         <div class="card" id="tax-by-type-card" style="display:none">
@@ -449,6 +458,7 @@
         <div class="fg"><label>金額</label><div class="fi-amt"><span>¥</span><input type="number" id="inc-amount" class="fi" placeholder="0" inputmode="numeric" required></div></div>
         <div class="fg"><label>入金方法</label><select id="inc-type" class="fi"><option value="振込">振込</option><option value="現金">現金</option><option value="その他">その他</option></select></div>
         <div class="fg"><label>所得区分</label><select id="inc-income-type" class="fi"><option value="business">事業所得</option><option value="salary">給与所得</option><option value="fx_stock">株・FX（分離課税）</option><option value="real_estate">不動産所得</option><option value="misc">その他</option></select></div>
+        <div class="fg"><label>消費税区分</label><select id="inc-taxable" class="fi"><option value="1">課税売上（通常）</option><option value="0">非課税売上（輸出・土地・医療等）</option></select></div>
         <div class="fg"><label>摘要</label><input type="text" id="inc-desc" class="fi" placeholder="例: ○○株式会社 報酬"></div>
         <button type="submit" class="btn-save btn-full">保存</button>
       </form>
@@ -619,6 +629,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260219b"></script>
+  <script src="app.js?v=20260218c"></script>
 </body>
 </html>

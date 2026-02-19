@@ -15,16 +15,17 @@ const App = {
   editingItem: null,
 
   categories: [
-    { id: 'cogs', name: '仕入・原価', icon: '📦' },
-    { id: 'labor', name: '外注・人件費', icon: '🤝' },
-    { id: 'rent', name: '家賃・光熱費', icon: '🏠' },
-    { id: 'general', name: '一般経費', icon: '📋' },
-    { id: 'entertainment', name: '接待交際費', icon: '🍽' },
-    { id: 'insurance', name: '保険・年金', icon: '🛡' },
-    { id: 'medical', name: '医療費', icon: '🏥' },
-    { id: 'tax_deductible', name: '租税公課', icon: '🏛' },
-    { id: 'tax_non_deductible', name: '税金(非経費)', icon: '📋' },
-    { id: 'asset', name: '固定資産', icon: '💻' },
+    { id: 'cogs', name: '仕入・原価', icon: '📦', taxAttr: 'expense', desc: '商品・材料の仕入れ費用' },
+    { id: 'labor', name: '外注・人件費', icon: '🤝', taxAttr: 'expense', desc: '外注費・業務委託・給与' },
+    { id: 'rent', name: '家賃・光熱費', icon: '🏠', taxAttr: 'expense', desc: '事務所家賃・光熱費（按分可）' },
+    { id: 'general', name: '一般経費', icon: '📋', taxAttr: 'expense', desc: '交通・通信・備品・広告など' },
+    { id: 'entertainment', name: '接待交際費', icon: '🍽', taxAttr: 'expense', desc: '取引先との飲食・接待' },
+    { id: 'insurance', name: '保険・年金（個人）', icon: '🛡', taxAttr: 'deduction', desc: '国保・国民年金→所得控除対象' },
+    { id: 'welfare', name: '福利厚生費（法人）', icon: '🎁', taxAttr: 'expense', desc: '法人の社員厚生・社内行事' },
+    { id: 'medical', name: '医療費', icon: '🏥', taxAttr: 'deduction', desc: '医療費控除の対象' },
+    { id: 'tax_deductible', name: '租税公課', icon: '🏛', taxAttr: 'expense', desc: '消費税・印紙税・固定資産税等' },
+    { id: 'tax_non_deductible', name: '税金(非経費)', icon: '📋', taxAttr: 'non_deductible', desc: '所得税・住民税→経費算入不可' },
+    { id: 'asset', name: '固定資産', icon: '💻', taxAttr: 'asset', desc: '10万円以上の設備→減価償却' },
   ],
   isTaxProfit(cat) { return cat === 'tax_non_deductible'; },
 
@@ -982,6 +983,15 @@ const App = {
       // 節税アドバイス（グループ×段階）
       this.renderAdviceGroups(t.adviceGroups || []);
 
+      // 消費税壁アラート
+      this.renderConsumptionTaxAlert(t.consumptionTaxAlert);
+
+      // 欠損金（赤字）繰越
+      this.renderCarryoverLoss(t.carryoverLoss);
+
+      // 税務健全性スコア
+      this.renderHealthScore(t.healthScore);
+
       // 控除一覧
       this.renderDeductions(t.deductions || [], y);
       // 減価償却一覧
@@ -1036,6 +1046,105 @@ const App = {
         toggle.textContent = isOpen ? '›' : '⌄';
       });
     });
+  },
+
+  renderConsumptionTaxAlert(alert) {
+    const card = qs('#cta-card');
+    if (!card) return;
+    if (!alert || alert.level === 'safe') { card.style.display = 'none'; return; }
+    card.style.display = '';
+    const levelClass = { warning: 'cta-warning', danger: 'cta-danger', over: 'cta-over' };
+    const levelIcon = { warning: '⚠️', danger: '🚨', over: '🔴' };
+    card.className = `card cta-card ${levelClass[alert.level] || ''}`;
+    const pct = alert.ratio || 0;
+    card.innerHTML = `
+      <div class="cta-head">
+        <span class="cta-icon">${levelIcon[alert.level] || '⚠️'}</span>
+        <div class="cta-info">
+          <div class="cta-title">消費税の壁 — ${alert.level === 'over' ? '納税義務発生' : '接近中'}</div>
+          <div class="cta-msg">${alert.message || ''}</div>
+        </div>
+      </div>
+      <div class="cta-bar-wrap">
+        <div class="cta-bar">
+          <div class="cta-bar-fill ${levelClass[alert.level] || ''}" style="width:${Math.min(pct, 100)}%"></div>
+          <span class="cta-bar-label">課税売上 ¥${(alert.taxableRevenue || 0).toLocaleString()} / 1,000万円</span>
+        </div>
+        <span class="cta-pct">${pct}%</span>
+      </div>
+      ${(alert.nonTaxableRevenue || 0) > 0 ? `<div class="cta-note">非課税売上: ¥${alert.nonTaxableRevenue.toLocaleString()}（輸出・土地・医療等）は消費税計算から除外</div>` : ''}
+    `;
+  },
+
+  renderCarryoverLoss(loss) {
+    const card = qs('#carryover-card');
+    if (!card) return;
+    if (!loss || !loss.hasLoss) { card.style.display = 'none'; return; }
+    card.style.display = '';
+    card.innerHTML = `
+      <div class="cl-head">
+        <span class="cl-icon">📉</span>
+        <div class="cl-info">
+          <div class="cl-title">欠損金（赤字）の繰越控除</div>
+          <div class="cl-desc">今年の赤字は「節税の貯金」です</div>
+        </div>
+      </div>
+      <div class="cl-amounts">
+        <div class="cl-item">
+          <span class="cl-label">今年の欠損金</span>
+          <span class="cl-val loss">¥${loss.amount.toLocaleString()}</span>
+        </div>
+        <div class="cl-item">
+          <span class="cl-label">来年の節税効果（最大）</span>
+          <span class="cl-val saving">▲¥${loss.nextYearSaving.toLocaleString()}</span>
+        </div>
+        <div class="cl-item">
+          <span class="cl-label">繰越可能年数</span>
+          <span class="cl-val">${loss.carryoverYears}年間</span>
+        </div>
+      </div>
+      <div class="cl-note">${loss.message || ''}</div>
+    `;
+  },
+
+  renderHealthScore(score) {
+    const card = qs('#health-score-card');
+    if (!card || !score) return;
+    card.style.display = '';
+    const gradeColors = { A: '#22c55e', B: '#6366f1', C: '#f59e0b', D: '#ef4444' };
+    const color = gradeColors[score.grade] || '#94a3b8';
+    card.innerHTML = `
+      <div class="hs-head">
+        <div class="hs-score-wrap">
+          <div class="hs-score" style="color:${color}">${score.score}</div>
+          <div class="hs-grade" style="background:${color}">${score.grade}</div>
+          <div class="hs-label">${score.gradeLabel}</div>
+        </div>
+        <div class="hs-title">
+          <div class="hs-title-text">税務健全性スコア</div>
+          <div class="hs-subtitle">税務調査リスク指標</div>
+        </div>
+      </div>
+      <div class="hs-bar-wrap">
+        <div class="hs-bar">
+          <div class="hs-bar-fill" style="width:${score.score}%;background:${color}"></div>
+        </div>
+      </div>
+      ${score.issues && score.issues.length > 0 ? `
+      <div class="hs-issues">
+        ${score.issues.map(issue => {
+          const cls = issue.severity === 'high' ? 'hs-issue-high' : issue.severity === 'medium' ? 'hs-issue-medium' : 'hs-issue-good';
+          const icon = issue.severity === 'high' ? '🔴' : issue.severity === 'medium' ? '🟡' : '🟢';
+          return `<div class="hs-issue ${cls}">
+            <span class="hs-issue-icon">${icon}</span>
+            <div class="hs-issue-body">
+              <div class="hs-issue-label">${issue.label}</div>
+              <div class="hs-issue-detail">${issue.detail}</div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>` : ''}
+    `;
   },
 
   renderPaymentSchedule(schedule) {
@@ -2148,7 +2257,8 @@ const App = {
             amount: qs('#inc-amount').value,
             type: qs('#inc-type').value,
             income_type: qs('#inc-income-type').value,
-            description: qs('#inc-desc').value
+            description: qs('#inc-desc').value,
+            taxable: parseInt(qs('#inc-taxable')?.value ?? '1')
           })
         });
         this.closeOverlay('income');

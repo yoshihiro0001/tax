@@ -65,6 +65,7 @@ try { db.exec("ALTER TABLE income ADD COLUMN status TEXT DEFAULT 'approved'"); }
 try { db.exec("ALTER TABLE income ADD COLUMN approved_at TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE income ADD COLUMN approved_by INTEGER"); } catch (e) {}
 try { db.exec("ALTER TABLE income ADD COLUMN created_by INTEGER"); } catch (e) {}
+try { db.exec("ALTER TABLE income ADD COLUMN taxable INTEGER DEFAULT 1"); } catch (e) {}
 
 // === テーブル作成 ===
 db.exec(`
@@ -294,6 +295,7 @@ function bookAccess(req) {
 const categoryKeywords = {
   medical: ['病院','医院','クリニック','歯科','薬局','薬店','ドラッグ','調剤','診療','処方','眼科','皮膚科','内科','外科','整骨','接骨','治療','健診','人間ドック','医療'],
   insurance: ['保険','生命保険','損害保険','健康保険','国民健康','年金','共済','社会保険'],
+  welfare: ['福利厚生','社員旅行','慰安旅行','忘年会','新年会','歓迎会','社内懇親','社内イベント','ウェルフェア'],
   entertainment: ['飲食','居酒屋','レストラン','食事','ランチ','ディナー','会食','接待','カフェ','スターバックス','タリーズ','ドトール','マクドナルド','ガスト','弁当'],
   labor: ['外注','業務委託','ランサーズ','クラウドワークス','ココナラ','デザイン料','開発費','給与','報酬','人件費'],
   rent: ['電気','ガス','水道','家賃','光熱','賃料','地代','管理費'],
@@ -603,7 +605,7 @@ router.delete('/api/books/:id/members/:memberId', auth, (req, res) => {
 
 router.post('/api/income', auth, (req, res) => {
   try {
-    const { bookId, date, amount, type, income_type, description } = req.body;
+    const { bookId, date, amount, type, income_type, description, taxable } = req.body;
     const book = bookAccess(req);
     if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
     if (!book.can_input_income) return res.status(403).json({ error: '収入の入力権限がありません' });
@@ -612,7 +614,8 @@ router.post('/api/income', auth, (req, res) => {
     const status = isOwner ? 'approved' : 'pending';
     const approvedAt = isOwner ? new Date().toISOString() : null;
     const approvedBy = isOwner ? req.userId : null;
-    const r = db.prepare('INSERT INTO income (book_id, date, amount, type, income_type, description, created_by, status, approved_at, approved_by) VALUES (?,?,?,?,?,?,?,?,?,?)').run(book.id, date, parseInt(amount), type || '振込', income_type || 'business', description || '', req.userId, status, approvedAt, approvedBy);
+    const taxableVal = (taxable === 0 || taxable === '0' || taxable === false) ? 0 : 1;
+    const r = db.prepare('INSERT INTO income (book_id, date, amount, type, income_type, description, taxable, created_by, status, approved_at, approved_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)').run(book.id, date, parseInt(amount), type || '振込', income_type || 'business', description || '', taxableVal, req.userId, status, approvedAt, approvedBy);
     logActivity(req.userId, 'add_income', `収入追加: ¥${amount}${!isOwner ? ' (承認待ち)' : ''}`);
     res.json({ id: r.lastInsertRowid, success: true, status });
   } catch (err) { logError(err.message, '/api/income', req.userId, err.stack); res.status(500).json({ error: err.message }); }
@@ -637,7 +640,7 @@ router.get('/api/income', auth, (req, res) => {
 
 router.put('/api/income/:id', auth, (req, res) => {
   try {
-    const { date, amount, type, income_type, description } = req.body;
+    const { date, amount, type, income_type, description, taxable } = req.body;
     // オーナーか、自分が作成したものだけ編集可能
     const inc = db.prepare('SELECT i.*, b.user_id as book_owner FROM income i JOIN books b ON i.book_id=b.id WHERE i.id=?').get(req.params.id);
     if (!inc) return res.status(404).json({ error: '見つかりません' });
@@ -649,6 +652,7 @@ router.put('/api/income/:id', auth, (req, res) => {
     if (type !== undefined) { updates.push('type=?'); params.push(type); }
     if (income_type !== undefined) { updates.push('income_type=?'); params.push(income_type); }
     if (description !== undefined) { updates.push('description=?'); params.push(description); }
+    if (taxable !== undefined) { updates.push('taxable=?'); params.push((taxable === 0 || taxable === '0') ? 0 : 1); }
     updates.push("updated_at=datetime('now','localtime')");
     params.push(inc.id);
     db.prepare(`UPDATE income SET ${updates.join(',')} WHERE id=?`).run(...params);
@@ -1052,6 +1056,68 @@ function medicalDeductionThreshold(totalIncome) {
   return Math.min(100000, Math.floor(totalIncome * 0.05));
 }
 
+// 税務健全性スコア（税務調査リスク指標）
+function calcHealthScore(expenseCategories, totalExpenses, totalIncome, hasDepreciations, depDetails) {
+  let score = 100;
+  const issues = [];
+  const totalExp = totalExpenses || 1;
+  const totalInc = totalIncome || 1;
+
+  // 接待交際費比率チェック（売上の3%超は要注意）
+  const entertainmentTotal = expenseCategories.find(c => c.category === 'entertainment')?.total || 0;
+  const entertainmentRatio = entertainmentTotal / totalInc;
+  if (entertainmentRatio > 0.10) {
+    score -= 25;
+    issues.push({ severity: 'high', label: '接待交際費が突出', detail: `売上の${Math.round(entertainmentRatio*100)}%（基準目安: 3%以下）。税務調査で要説明` });
+  } else if (entertainmentRatio > 0.05) {
+    score -= 10;
+    issues.push({ severity: 'medium', label: '接待交際費がやや多め', detail: `売上の${Math.round(entertainmentRatio*100)}%。接待目的・相手先の記録を保管推奨` });
+  }
+
+  // 家賃按分比率チェック（売上の50%超は過大）
+  const rentTotal = expenseCategories.find(c => c.category === 'rent')?.total || 0;
+  const rentRatio = rentTotal / totalInc;
+  if (rentRatio > 0.50) {
+    score -= 20;
+    issues.push({ severity: 'high', label: '家賃・光熱費が過大', detail: `売上の${Math.round(rentRatio*100)}%。自宅按分は事業専用面積比率に基づく根拠が必要` });
+  } else if (rentRatio > 0.30) {
+    score -= 10;
+    issues.push({ severity: 'medium', label: '家賃按分を確認', detail: `売上の${Math.round(rentRatio*100)}%。按分計算の根拠書類を整備推奨` });
+  }
+
+  // 一般経費の未分類比率（高すぎると調査対象）
+  const generalTotal = expenseCategories.find(c => c.category === 'general')?.total || 0;
+  const generalRatio = generalTotal / totalExp;
+  if (generalRatio > 0.70) {
+    score -= 15;
+    issues.push({ severity: 'medium', label: '支出が未分類のまま', detail: `支出の${Math.round(generalRatio*100)}%が「一般経費」。より詳細な科目分類を推奨` });
+  }
+
+  // 固定資産の減価償却未登録チェック
+  const assetTotal = expenseCategories.find(c => c.category === 'asset')?.total || 0;
+  const depCount = (depDetails || []).length;
+  if (assetTotal >= 100000 && depCount === 0) {
+    score -= 15;
+    issues.push({ severity: 'medium', label: '固定資産の減価償却が未登録', detail: `¥${assetTotal.toLocaleString()}の固定資産支出があります。10万円以上は減価償却登録が必要` });
+  }
+
+  // 医療費チェック（個人事業主で医療費が突出）
+  const medicalTotal = expenseCategories.find(c => c.category === 'medical')?.total || 0;
+  if (medicalTotal > 500000) {
+    score -= 10;
+    issues.push({ severity: 'medium', label: '医療費が高額', detail: `¥${medicalTotal.toLocaleString()}。業務との関連性の説明が必要な場合があります` });
+  }
+
+  // スコアが高い場合のポジティブフィードバック
+  if (score >= 90) {
+    issues.push({ severity: 'good', label: '良好な税務管理', detail: '科目分類・比率ともに健全です。この状態を維持してください' });
+  }
+
+  const grade = score >= 90 ? 'A' : score >= 75 ? 'B' : score >= 60 ? 'C' : 'D';
+  const gradeLabel = score >= 90 ? '優良' : score >= 75 ? '良好' : score >= 60 ? '要注意' : '要改善';
+  return { score: Math.max(0, score), grade, gradeLabel, issues };
+}
+
 // 月末日を取得
 function lastDayOfMonth(year, month) {
   return new Date(year, month, 0).getDate();
@@ -1174,6 +1240,31 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
     const businessIncome = incomeByType.find(r => r.income_type === 'business')?.total || 0;
     const separateIncome = incomeByType.find(r => r.income_type === 'fx_stock')?.total || 0;
 
+    // 課税売上・非課税売上の分類（消費税計算用）
+    const taxableRevenue = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM income WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=? AND COALESCE(taxable,1)=1").get(book.id, year).t;
+    const nonTaxableRevenue = totalIncome - taxableRevenue;
+
+    // 消費税壁アラート（課税売上1,000万円基準）
+    const CT_THRESHOLD = 10000000;
+    const taxableRatio = CT_THRESHOLD > 0 ? Math.min(100, Math.round(taxableRevenue / CT_THRESHOLD * 100)) : 0;
+    const consumptionTaxAlert = {
+      taxableRevenue,
+      nonTaxableRevenue,
+      threshold: CT_THRESHOLD,
+      ratio: taxableRatio,
+      level: taxableRevenue >= CT_THRESHOLD ? 'over'
+           : taxableRevenue >= 9000000 ? 'danger'
+           : taxableRevenue >= 7000000 ? 'warning'
+           : 'safe',
+      message: taxableRevenue >= CT_THRESHOLD
+        ? `課税売上が1,000万円を超えています。翌々年から消費税の申告・納税義務が発生します`
+        : taxableRevenue >= 9000000
+        ? `課税売上が900万円超。あと¥${(CT_THRESHOLD - taxableRevenue).toLocaleString()}で消費税納税義務が発生します`
+        : taxableRevenue >= 7000000
+        ? `課税売上が700万円超。1,000万円の壁まであと¥${(CT_THRESHOLD - taxableRevenue).toLocaleString()}です`
+        : null
+    };
+
     // 経費（承認済みのみ、利益課税は除外）
     const totalExpenses = db.prepare(`SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=? ${EXPENSE_EXCLUDE_FILTER}`).get(book.id, year).t;
     const taxProfitTotal = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=? AND category='tax_non_deductible'").get(book.id, year).t;
@@ -1272,7 +1363,7 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
       const corpResTax = calcCorpResidentTax(corpTax);
       const corpBizTax = calcCorpBusinessTax(corpTaxableIncome);
       const corpSpecBizTax = calcCorpSpecialBizTax(corpTaxableIncome);
-      const consumptionTax = calcConsumptionTax(totalIncome);
+      const consumptionTax = calcConsumptionTax(taxableRevenue);
       const corpTotalTax = corpTax + corpResTax + corpBizTax + corpSpecBizTax + (consumptionTax.applicable ? consumptionTax.amount : 0);
 
       const corpEffRate = comprehensiveIncome > 0 ? (corpTax + corpResTax + corpBizTax + corpSpecBizTax) / corpTaxableIncome : 0;
@@ -1331,7 +1422,7 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
 
       const nhi = calcNHI(comprehensiveIncome, totalExpenses + totalDepreciation, 0);
       const businessTax = calcBusinessTax(netBusinessIncome);
-      const consumptionTax = calcConsumptionTax(totalIncome);
+      const consumptionTax = calcConsumptionTax(taxableRevenue);
       totalAllTaxes = totalTax + nhi.total + businessTax + (consumptionTax.applicable ? consumptionTax.amount : 0);
       effectiveTotalRate = comprehensiveIncome > 0 ? Math.round(totalAllTaxes / comprehensiveIncome * 1000) / 10 : 0;
 
@@ -1440,6 +1531,24 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
       effectiveRate: Math.round(effectiveRate * 1000) / 10
     }));
 
+    // 欠損金（赤字）繰越の計算
+    const currentYearNetIncome = comprehensiveIncome - totalExpenses - totalDepreciation - totalDeductions;
+    const carryoverLoss = (() => {
+      if (currentYearNetIncome >= 0) return { hasLoss: false, amount: 0, nextYearSaving: 0 };
+      const lossAmt = Math.abs(currentYearNetIncome);
+      const savingRate = isCorp ? 0.25 : (currentBracket.rate + 0.10);
+      return {
+        hasLoss: true,
+        amount: lossAmt,
+        nextYearSaving: Math.floor(lossAmt * savingRate),
+        carryoverYears: isCorp ? 10 : 3,
+        message: `今年の赤字¥${lossAmt.toLocaleString()}は${isCorp ? '10' : '3'}年間繰り越せます。来年の税金から最大¥${Math.floor(lossAmt * savingRate).toLocaleString()}を節税できます`
+      };
+    })();
+
+    // 税務健全性スコア
+    const healthScore = calcHealthScore(expenseCategories, totalExpenses, comprehensiveIncome, depDetails.length > 0, depDetails);
+
     // 税率帯一覧（個人のみ）
     const bracketMap = isCorp ? [] : INCOME_TAX_BRACKETS.map((b, i) => ({
       min: i === 0 ? 0 : INCOME_TAX_BRACKETS[i - 1].limit + 1,
@@ -1454,6 +1563,7 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
       taxByIncomeType,
       comprehensiveTaxDetail,
       totalIncome, comprehensiveIncome, separateIncome,
+      taxableRevenue, nonTaxableRevenue,
       totalExpenses, taxProfitTotal, totalDepreciation, totalDeductions,
       depreciationDetails: depDetails,
       deductions: deductionList.map(d => ({ ...d, label: DEDUCTION_LABELS[d.type] || d.name || d.type })),
@@ -1467,7 +1577,10 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
       taxSummary, paymentSchedule, adviceGroups,
       currentBracket: { rate: currentBracket.rate, ratePercent: Math.round(currentBracket.rate * 100) },
       bracketMap,
-      labels: { incomeTypes: INCOME_TYPE_LABELS, deductionTypes: DEDUCTION_LABELS }
+      labels: { incomeTypes: INCOME_TYPE_LABELS, deductionTypes: DEDUCTION_LABELS },
+      consumptionTaxAlert,
+      carryoverLoss,
+      healthScore
     });
   } catch (err) { logError(err.message, '/api/tax-simulation', req.userId, err.stack); res.status(500).json({ error: err.message }); }
 });
@@ -1550,7 +1663,7 @@ router.get('/api/ai-format/:year', auth, (req, res) => {
     const inc = db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM income WHERE book_id=? AND strftime('%Y',date)=?").get(book.id,year);
     const exps = db.prepare("SELECT category,SUM(amount) as total FROM expenses WHERE book_id=? AND strftime('%Y',date)=? GROUP BY category ORDER BY total DESC").all(book.id,year);
     const expT = db.prepare("SELECT COALESCE(SUM(amount),0) as total FROM expenses WHERE book_id=? AND strftime('%Y',date)=?").get(book.id,year);
-    const cn = { cogs:'仕入・原価',labor:'外注・人件費',rent:'家賃・光熱費',general:'一般経費',entertainment:'接待交際費',insurance:'保険・年金',medical:'医療費',tax_deductible:'租税公課',tax_non_deductible:'税金(非経費)',asset:'固定資産' };
+    const cn = { cogs:'仕入・原価',labor:'外注・人件費',rent:'家賃・光熱費',general:'一般経費',entertainment:'接待交際費',insurance:'保険・年金',welfare:'福利厚生費',medical:'医療費',tax_deductible:'租税公課',tax_non_deductible:'税金(非経費)',asset:'固定資産' };
     const bd = 650000;
     let t = `【${year}年分 確定申告データ】\n\n期間: ${year}/01/01 - ${year}/12/31\n総収入: ${inc.total.toLocaleString()}円\n総経費: ${expT.total.toLocaleString()}円\n\n【経費内訳】\n`;
     exps.forEach(i => { t += `  ${cn[i.category]||i.category}: ${i.total.toLocaleString()}円\n`; });
@@ -1630,7 +1743,7 @@ router.get('/api/export-receipts', auth, (req, res) => {
 
     const CATEGORY_NAMES = {
       cogs:'仕入・原価', labor:'外注・人件費', rent:'家賃・光熱費', general:'一般経費',
-      entertainment:'接待交際費', insurance:'保険・年金', medical:'医療費',
+      entertainment:'接待交際費', insurance:'保険・年金', welfare:'福利厚生費', medical:'医療費',
       tax_deductible:'租税公課', tax_non_deductible:'税金(非経費)', asset:'固定資産'
     };
 

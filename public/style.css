@@ -1388,5 +1388,77 @@ body { min-height: 100dvh; }
 .pt-item[data-cat="biz_tax"] .pt-item-label { color: #f97316; }
 .pt-item[data-cat="consumption"] .pt-item-label { color: #dc2626; }
 
+/* ============================================
+   消費税の壁アラート
+   ============================================ */
+.cta-card { border-left: 4px solid var(--text3); padding: 14px 16px; }
+.cta-card.cta-warning { border-left-color: #f59e0b; background: #fffbeb; }
+.cta-card.cta-danger { border-left-color: #ef4444; background: #fef2f2; }
+.cta-card.cta-over { border-left-color: #dc2626; background: #fef2f2; }
+
+.cta-head { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 12px; }
+.cta-icon { font-size: 20px; flex-shrink: 0; }
+.cta-info { flex: 1; min-width: 0; }
+.cta-title { font-weight: 700; font-size: 14px; color: var(--text); margin-bottom: 4px; }
+.cta-msg { font-size: 12px; color: var(--text2); line-height: 1.5; }
+
+.cta-bar-wrap { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.cta-bar { flex: 1; height: 10px; background: var(--border); border-radius: 5px; position: relative; overflow: hidden; }
+.cta-bar-fill { height: 100%; border-radius: 5px; transition: width .6s ease; }
+.cta-bar-fill.cta-warning { background: #f59e0b; }
+.cta-bar-fill.cta-danger { background: #ef4444; }
+.cta-bar-fill.cta-over { background: #dc2626; }
+.cta-bar-label { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: 9px; white-space: nowrap; color: var(--text); font-weight: 600; }
+.cta-pct { font-weight: 800; font-size: 13px; color: var(--text); flex-shrink: 0; }
+.cta-note { font-size: 11px; color: var(--text3); border-top: 1px solid var(--border); padding-top: 8px; margin-top: 4px; }
+
+/* ============================================
+   欠損金（赤字）繰越カード
+   ============================================ */
+.carryover-card { border-left: 4px solid #6366f1; background: #f8f7ff; }
+.cl-head { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 14px; }
+.cl-icon { font-size: 22px; }
+.cl-info { flex: 1; }
+.cl-title { font-weight: 700; font-size: 14px; color: var(--text); }
+.cl-desc { font-size: 12px; color: var(--text2); margin-top: 2px; }
+.cl-amounts { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.cl-item { background: white; border-radius: var(--radius-xs); padding: 10px; text-align: center; }
+.cl-label { display: block; font-size: 10px; color: var(--text3); margin-bottom: 4px; }
+.cl-val { font-weight: 700; font-size: 14px; color: var(--text); }
+.cl-val.loss { color: #ef4444; }
+.cl-val.saving { color: #22c55e; }
+.cl-note { font-size: 11px; color: var(--text2); line-height: 1.5; background: var(--pri-bg); border-radius: var(--radius-xs); padding: 8px 10px; }
+
+/* ============================================
+   税務健全性スコア
+   ============================================ */
+.health-score-card {}
+.hs-head { display: flex; gap: 16px; align-items: center; margin-bottom: 14px; }
+.hs-score-wrap { text-align: center; flex-shrink: 0; }
+.hs-score { font-size: 36px; font-weight: 800; line-height: 1; }
+.hs-grade {
+  display: inline-block; margin-top: 4px;
+  padding: 2px 10px; border-radius: 20px;
+  color: white; font-weight: 800; font-size: 14px;
+}
+.hs-label { font-size: 11px; color: var(--text3); margin-top: 4px; }
+.hs-title { flex: 1; }
+.hs-title-text { font-weight: 700; font-size: 15px; color: var(--text); }
+.hs-subtitle { font-size: 11px; color: var(--text3); margin-top: 2px; }
+
+.hs-bar-wrap { margin-bottom: 14px; }
+.hs-bar { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+.hs-bar-fill { height: 100%; border-radius: 4px; transition: width .8s cubic-bezier(.22,1,.36,1); }
+
+.hs-issues { display: flex; flex-direction: column; gap: 8px; }
+.hs-issue { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: var(--radius-xs); }
+.hs-issue-high { background: #fef2f2; border-left: 3px solid #ef4444; }
+.hs-issue-medium { background: #fffbeb; border-left: 3px solid #f59e0b; }
+.hs-issue-good { background: #f0fdf4; border-left: 3px solid #22c55e; }
+.hs-issue-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+.hs-issue-body { flex: 1; min-width: 0; }
+.hs-issue-label { font-weight: 600; font-size: 13px; color: var(--text); margin-bottom: 2px; }
+.hs-issue-detail { font-size: 11px; color: var(--text2); line-height: 1.4; }
+
 /* Print */
 @media print { .topbar, .bottom-nav, .overlay { display: none !important; } }
