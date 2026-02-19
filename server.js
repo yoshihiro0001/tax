@@ -209,7 +209,7 @@ for (const sql of migrations) {
   try { db.exec(sql); } catch (e) {}
 }
 
-// カテゴリ統合マイグレーション（冪等: 何度実行しても安全）
+// カテゴリ統合マイグレーション（冪等）
 db.exec(`
   UPDATE expenses SET category = 'general' WHERE category IN ('travel','communication','supplies','advertising','fees','misc');
   UPDATE expenses SET category = 'labor' WHERE category = 'outsourcing';
@@ -218,6 +218,44 @@ db.exec(`
   UPDATE expenses SET category = 'tax_deductible' WHERE category = 'tax_cost';
   UPDATE expenses SET category = 'tax_non_deductible' WHERE category = 'tax_profit';
 `);
+
+// 繰越欠損金テーブル
+db.exec(`
+  CREATE TABLE IF NOT EXISTS loss_carryforward (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    book_id INTEGER NOT NULL,
+    year TEXT NOT NULL,
+    amount INTEGER NOT NULL DEFAULT 0,
+    used INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE,
+    UNIQUE(book_id, year)
+  );
+`);
+
+// ===== 税務属性マップ =====
+const TAX_ATTRIBUTES = {
+  cogs:               { individual: { deductible: true, ctax: 'taxable' }, corporate: { deductible: true, ctax: 'taxable' } },
+  labor:              { individual: { deductible: true, ctax: 'taxable', withholding: true }, corporate: { deductible: true, ctax: 'taxable', withholding: true } },
+  rent:               { individual: { deductible: true, ctax: 'taxable', homeOffice: true }, corporate: { deductible: true, ctax: 'taxable' } },
+  general:            { individual: { deductible: true, ctax: 'taxable' }, corporate: { deductible: true, ctax: 'taxable' } },
+  entertainment:      { individual: { deductible: true, ctax: 'taxable' }, corporate: { deductible: true, ctax: 'taxable', corpLimit: 8000000 } },
+  insurance:          { individual: { deductible: false, deductionType: 'social_insurance', fullDeduction: true, ctax: 'exempt' }, corporate: { deductible: true, ctax: 'exempt' } },
+  medical:            { individual: { deductible: false, deductionType: 'medical', thresholdBased: true, ctax: 'exempt' }, corporate: { deductible: true, ctax: 'exempt' } },
+  tax_deductible:     { individual: { deductible: true, ctax: 'exempt' }, corporate: { deductible: true, ctax: 'exempt' } },
+  tax_non_deductible: { individual: { deductible: false, nonDeductible: true }, corporate: { deductible: false, nonDeductible: true } },
+  asset:              { individual: { deductible: false, isAsset: true, depThreshold: 100000 }, corporate: { deductible: false, isAsset: true, depThreshold: 100000 } },
+};
+
+const INCOME_TAX_ATTR = {
+  business:    { ctax: 'taxable', method: 'comprehensive' },
+  salary:      { ctax: 'exempt', method: 'comprehensive', salaryDeduction: true },
+  fx_stock:    { ctax: 'exempt', method: 'separate', rate: 0.20315 },
+  real_estate: { ctax: 'taxable', method: 'comprehensive' },
+  subsidy:     { ctax: 'exempt', method: 'comprehensive' },
+  refund:      { ctax: 'exempt', method: 'comprehensive' },
+  misc:        { ctax: 'exempt', method: 'comprehensive' },
+};
 
 // === インデックス ===
 db.exec(`
@@ -1043,12 +1081,91 @@ function calcBusinessTax(businessNetIncome) {
   return Math.floor((businessNetIncome - exempt) * 0.05);
 }
 
-// 消費税（簡易課税、サービス業みなし仕入率50%）
-function calcConsumptionTax(totalRevenue) {
-  if (totalRevenue <= 10000000) return { applicable: false, amount: 0 };
-  const salesTax = Math.floor(totalRevenue * 10 / 110);
-  const amount = Math.floor(salesTax * 0.50);
-  return { applicable: true, amount, salesTax };
+// 消費税（簡易課税 vs 本則課税を比較）
+function calcConsumptionTax(taxableRevenue, taxableExpenses) {
+  if (taxableRevenue <= 10000000) return { applicable: false, amount: 0 };
+  const salesTax = Math.floor(taxableRevenue * 10 / 110);
+  const inputTax = Math.floor((taxableExpenses || 0) * 10 / 110);
+  const simplified = Math.floor(salesTax * 0.50);
+  const standard = Math.max(0, salesTax - inputTax);
+  const useSimplified = simplified <= standard;
+  return {
+    applicable: true,
+    amount: useSimplified ? simplified : standard,
+    method: useSimplified ? 'simplified' : 'standard',
+    salesTax, inputTax, simplified, standard,
+    savings: Math.abs(simplified - standard),
+  };
+}
+
+// 社保フィードバックループ（NHI→控除→再計算を収束まで反復）
+function calcWithNHILoop(comprehensiveIncome, totalExpensesDep, baseDeductions, calcTaxFn) {
+  let nhiTotal = 0;
+  let prevNhi = -1;
+  for (let i = 0; i < 5 && nhiTotal !== prevNhi; i++) {
+    prevNhi = nhiTotal;
+    const adjDeductions = baseDeductions + nhiTotal;
+    const netIncome = Math.max(0, comprehensiveIncome - totalExpensesDep);
+    const taxableIncome = Math.max(0, netIncome - adjDeductions);
+    const nhi = calcNHI(comprehensiveIncome, totalExpensesDep, 0);
+    nhiTotal = nhi.total;
+  }
+  const finalDeductions = baseDeductions + nhiTotal;
+  const netIncome = Math.max(0, comprehensiveIncome - totalExpensesDep);
+  const taxableIncome = Math.max(0, netIncome - finalDeductions);
+  return { taxableIncome, nhiTotal, finalDeductions, netIncome };
+}
+
+// 繰越欠損金の取得と適用
+function getLossCarryforward(bookId, year, entityType) {
+  const maxYears = entityType === 'corporate' ? 10 : 3;
+  const y = parseInt(year);
+  const losses = db.prepare('SELECT * FROM loss_carryforward WHERE book_id=? AND year >= ? AND amount > used ORDER BY year ASC')
+    .all(bookId, String(y - maxYears));
+  return losses.filter(l => parseInt(l.year) < y);
+}
+
+function applyLossCarryforward(bookId, year, entityType, profit) {
+  if (profit <= 0) return { adjustedProfit: profit, usedLosses: [], totalUsed: 0 };
+  const losses = getLossCarryforward(bookId, year, entityType);
+  let remaining = profit;
+  const usedLosses = [];
+  for (const l of losses) {
+    const available = l.amount - l.used;
+    if (available <= 0 || remaining <= 0) continue;
+    const use = Math.min(available, remaining);
+    remaining -= use;
+    usedLosses.push({ year: l.year, used: use, original: l.amount });
+  }
+  return { adjustedProfit: remaining, usedLosses, totalUsed: profit - remaining };
+}
+
+function saveLossIfNegative(bookId, year, profit) {
+  if (profit >= 0) return;
+  const loss = Math.abs(profit);
+  try {
+    db.prepare('INSERT OR REPLACE INTO loss_carryforward (book_id, year, amount, used) VALUES (?, ?, ?, 0)').run(bookId, year, loss);
+  } catch (e) {}
+}
+
+// 源泉徴収スケジュール生成（外注・人件費）
+function generateWithholdingSchedule(bookId, year) {
+  const rows = db.prepare("SELECT strftime('%Y-%m', date) as month, SUM(amount) as total FROM expenses WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=? AND category='labor' GROUP BY strftime('%Y-%m', date) ORDER BY month").all(bookId, year);
+  return rows.filter(r => r.total > 0).map(r => {
+    const m = parseInt(r.month.slice(5));
+    const yr = parseInt(r.month.slice(0, 4));
+    const whAmount = r.total <= 1000000 ? Math.floor(r.total * 0.1021) : Math.floor(1000000 * 0.1021 + (r.total - 1000000) * 0.2042);
+    const dueMonth = m === 12 ? 1 : m + 1;
+    const dueYear = m === 12 ? yr + 1 : yr;
+    return {
+      date: `${dueYear}-${String(dueMonth).padStart(2,'0')}-10`,
+      label: `源泉所得税（${m}月分）`,
+      amount: whAmount,
+      cat: 'withholding',
+      icon: '📋',
+      baseAmount: r.total,
+    };
+  });
 }
 
 // 医療費控除の閾値（10万円 or 所得の5%の低い方）
@@ -1215,8 +1332,8 @@ function calcDepreciationRemaining(dep) {
 
 // 所得区分別ラベル
 const INCOME_TYPE_LABELS = {
-  business: '事業所得', salary: '給与所得', fx_stock: '株・FX（分離課税）',
-  real_estate: '不動産所得', misc: 'その他の所得'
+  business: '売上', salary: '給与所得', fx_stock: '株・FX（分離課税）',
+  real_estate: '不動産所得', subsidy: '助成金・補助金', refund: '還付金', misc: 'その他の所得'
 };
 
 // 控除タイプ別ラベル
@@ -1354,16 +1471,36 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
     const entityType = book.entity_type || 'individual';
     const isCorp = entityType === 'corporate';
 
+    // 課税仕入額（消費税本則計算用）
+    const taxableCats = Object.entries(TAX_ATTRIBUTES).filter(([,v]) => (v[entityType]?.ctax === 'taxable')).map(([k]) => k);
+    const taxableExpenseTotal = expenseCategories.filter(c => taxableCats.includes(c.category)).reduce((s, c) => s + c.total, 0);
+
+    // 繰越欠損金
+    const rawProfit = comprehensiveIncome - totalExpenses - totalDepreciation;
+    saveLossIfNegative(book.id, year, rawProfit);
+    const lossResult = applyLossCarryforward(book.id, year, entityType, Math.max(0, rawProfit));
+    const lossCarryforwardData = {
+      currentYearLoss: rawProfit < 0 ? Math.abs(rawProfit) : 0,
+      availableLosses: getLossCarryforward(book.id, year, entityType).map(l => ({ year: l.year, remaining: l.amount - l.used })).filter(l => l.remaining > 0),
+      usedThisYear: lossResult.usedLosses,
+      totalUsed: lossResult.totalUsed,
+      futureSavingEstimate: lossResult.usedLosses.length > 0 ? 0 : (rawProfit < 0 ? Math.floor(Math.abs(rawProfit) * 0.3) : 0),
+    };
+
+    // 源泉徴収スケジュール
+    const withholdingSchedule = generateWithholdingSchedule(book.id, year);
+
     let taxResult, adviceGroups, paymentSchedule, taxSummary, totalAllTaxes, effectiveTotalRate;
 
     if (isCorp) {
       // ===== 法人税計算 =====
-      const corpTaxableIncome = Math.max(0, comprehensiveIncome - totalExpenses - totalDepreciation);
+      const adjCorpIncome = Math.max(0, rawProfit - lossResult.totalUsed);
+      const corpTaxableIncome = adjCorpIncome;
       const corpTax = calcCorporateTax(corpTaxableIncome);
       const corpResTax = calcCorpResidentTax(corpTax);
       const corpBizTax = calcCorpBusinessTax(corpTaxableIncome);
       const corpSpecBizTax = calcCorpSpecialBizTax(corpTaxableIncome);
-      const consumptionTax = calcConsumptionTax(taxableRevenue);
+      const consumptionTax = calcConsumptionTax(taxableRevenue, taxableExpenseTotal);
       const corpTotalTax = corpTax + corpResTax + corpBizTax + corpSpecBizTax + (consumptionTax.applicable ? consumptionTax.amount : 0);
 
       const corpEffRate = comprehensiveIncome > 0 ? (corpTax + corpResTax + corpBizTax + corpSpecBizTax) / corpTaxableIncome : 0;
@@ -1415,24 +1552,35 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
         });
       }
     } else {
-      // ===== 個人税計算（既存ロジック拡張） =====
-      const nhiRate = NHI_RATES.medical.incomeRate + NHI_RATES.support.incomeRate;
-      const bizTaxRate = netBusinessIncome > 2900000 ? 0.05 : 0;
-      const effectiveRate = taxableIncome > 0 ? (currentBracket.rate + 0.10 + currentBracket.rate * 0.021 + nhiRate + bizTaxRate) : 0;
+      // ===== 個人税計算（社保ループ＋繰越欠損金） =====
+      const adjNetIncome = Math.max(0, netBusinessIncome - lossResult.totalUsed);
 
+      // NHIフィードバックループ（NHI→控除→再計算）
       const nhi = calcNHI(comprehensiveIncome, totalExpenses + totalDepreciation, 0);
-      const businessTax = calcBusinessTax(netBusinessIncome);
-      const consumptionTax = calcConsumptionTax(taxableRevenue);
-      totalAllTaxes = totalTax + nhi.total + businessTax + (consumptionTax.applicable ? consumptionTax.amount : 0);
+      const nhiDeduction = nhi.total;
+      const loopTaxable = Math.max(0, adjNetIncome - totalDeductions - nhiDeduction);
+
+      const adjIncomeTax = calcIncomeTax(loopTaxable);
+      const adjReconTax = Math.floor(adjIncomeTax * 0.021);
+      const adjResidentTax = calcResidentTax(loopTaxable);
+      const adjTotalTax = adjIncomeTax + adjReconTax + adjResidentTax + separateTax;
+
+      const nhiRate = NHI_RATES.medical.incomeRate + NHI_RATES.support.incomeRate;
+      const businessTax = calcBusinessTax(adjNetIncome);
+      const bizTaxRate = adjNetIncome > 2900000 ? 0.05 : 0;
+      const effectiveRate = loopTaxable > 0 ? (currentBracket.rate + 0.10 + currentBracket.rate * 0.021 + nhiRate + bizTaxRate) : 0;
+
+      const consumptionTax = calcConsumptionTax(taxableRevenue, taxableExpenseTotal);
+      totalAllTaxes = adjTotalTax + nhi.total + businessTax + (consumptionTax.applicable ? consumptionTax.amount : 0);
       effectiveTotalRate = comprehensiveIncome > 0 ? Math.round(totalAllTaxes / comprehensiveIncome * 1000) / 10 : 0;
 
       taxResult = {
-        incomeTax, reconstructionTax, residentTax, separateTax, totalTax,
-        nhi, businessTax, consumptionTax,
+        incomeTax: adjIncomeTax, reconstructionTax: adjReconTax, residentTax: adjResidentTax, separateTax, totalTax: adjTotalTax,
+        nhi, businessTax, consumptionTax, nhiDeduction,
       };
 
       paymentSchedule = generatePaymentSchedule(year, {
-        incomeTax, reconstructionTax, residentTax, nhiTotal: nhi.total, businessTax, consumptionTax
+        incomeTax: adjIncomeTax, reconstructionTax: adjReconTax, residentTax: adjResidentTax, nhiTotal: nhi.total, businessTax, consumptionTax
       });
 
       taxSummary = [
@@ -1557,6 +1705,12 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
       isCurrent: taxableIncome <= b.limit && (i === 0 || taxableIncome > INCOME_TAX_BRACKETS[i - 1].limit)
     }));
 
+    // 真の自由資金（手残り）
+    const freeCash = totalIncome - totalExpenses - totalAllTaxes;
+
+    // 源泉徴収をスケジュールに統合
+    const fullSchedule = [...paymentSchedule, ...withholdingSchedule].sort((a, b) => a.date.localeCompare(b.date));
+
     res.json({
       year, entityType,
       incomeByType: incomeByType.map(r => ({ ...r, label: INCOME_TYPE_LABELS[r.income_type] || r.income_type })),
@@ -1574,11 +1728,14 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
       businessTax: taxResult.businessTax || 0,
       consumptionTax: taxResult.consumptionTax || { applicable: false, amount: 0 },
       totalAllTaxes, effectiveTotalRate,
-      taxSummary, paymentSchedule, adviceGroups,
+      freeCash,
+      lossCarryforward: lossCarryforwardData,
+      consumptionTaxAlert,
+      taxSummary, paymentSchedule: fullSchedule, adviceGroups,
       currentBracket: { rate: currentBracket.rate, ratePercent: Math.round(currentBracket.rate * 100) },
       bracketMap,
+      taxAttributes: TAX_ATTRIBUTES,
       labels: { incomeTypes: INCOME_TYPE_LABELS, deductionTypes: DEDUCTION_LABELS },
-      consumptionTaxAlert,
       carryoverLoss,
       healthScore
     });

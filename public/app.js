@@ -39,10 +39,12 @@ const App = {
   },
 
   incomeTypes: {
-    business: { name: '事業所得', icon: '💼' },
+    business: { name: '売上', icon: '💼' },
     salary: { name: '給与所得', icon: '🏢' },
     fx_stock: { name: '株・FX', icon: '📈' },
     real_estate: { name: '不動産所得', icon: '🏠' },
+    subsidy: { name: '助成金・補助金', icon: '🏛' },
+    refund: { name: '還付金', icon: '💰' },
     misc: { name: 'その他', icon: '📌' }
   },
   incomeTypeName(id) { return (this.incomeTypes[id] || this.incomeTypes.business).name; },
@@ -873,11 +875,61 @@ const App = {
       const ctd = t.comprehensiveTaxDetail || {};
       const cb = t.currentBracket || { rate: 0, ratePercent: 0 };
 
-      // ヒーロー（全税負担）
+      // 真の自由資金ヒーロー
+      const freeCash = t.freeCash || 0;
+      qs('#free-cash-val').textContent = `¥${freeCash.toLocaleString()}`;
+      qs('#free-cash-sub').textContent = `収入 ¥${(t.totalIncome || 0).toLocaleString()} − 支出 ¥${(t.totalExpenses || 0).toLocaleString()} − 税 ¥${(t.totalAllTaxes || 0).toLocaleString()}`;
+      const fchEl = qs('#free-cash-hero');
+      if (fchEl) fchEl.classList.toggle('negative', freeCash < 0);
+
+      // 税負担ヒーロー
       const allTaxes = t.totalAllTaxes || tax.totalTax || 0;
       qs('#tax-total').textContent = `¥${allTaxes.toLocaleString()}`;
       const effRate = t.effectiveTotalRate || 0;
       qs('#tax-hero-sub').textContent = effRate > 0 ? `実効税率 ${effRate}%` : '';
+
+      // 赤字の貯金箱
+      const lc = t.lossCarryforward || {};
+      const lossCard = qs('#loss-card');
+      if (lossCard) {
+        const avail = (lc.availableLosses || []);
+        const totalLoss = avail.reduce((s, l) => s + l.remaining, 0);
+        if (totalLoss > 0 || (lc.currentYearLoss || 0) > 0) {
+          lossCard.style.display = '';
+          let html = '<div class="loss-head"><span class="loss-icon">🏦</span><span class="loss-title">赤字の貯金箱</span></div>';
+          if (totalLoss > 0) {
+            const futSave = Math.floor(totalLoss * 0.3);
+            html += `<div class="loss-main">繰越欠損金 <strong>¥${totalLoss.toLocaleString()}</strong></div>`;
+            html += `<div class="loss-sub">将来の税金を約 ¥${futSave.toLocaleString()} 軽減できる資産</div>`;
+          }
+          if ((lc.currentYearLoss || 0) > 0) {
+            html += `<div class="loss-current">今年の赤字 ¥${lc.currentYearLoss.toLocaleString()} → 翌年以降に繰越</div>`;
+          }
+          if ((lc.totalUsed || 0) > 0) {
+            html += `<div class="loss-used">今年 ¥${lc.totalUsed.toLocaleString()} の繰越を使用 → 節税済み</div>`;
+          }
+          qs('#loss-content').innerHTML = html;
+        } else {
+          lossCard.style.display = 'none';
+        }
+      }
+
+      // 消費税アラート
+      const cta = t.consumptionTaxAlert || {};
+      const ctaCard = qs('#cta-card');
+      if (ctaCard && cta.level && cta.level !== 'safe' && cta.message) {
+        ctaCard.style.display = '';
+        ctaCard.innerHTML = `<div class="cta-level cta-${cta.level}">${cta.level === 'over' ? '⚠️' : '📊'} ${cta.message}</div>`;
+      } else if (ctaCard) {
+        ctaCard.style.display = 'none';
+      }
+
+      // 消費税最適化表示
+      const ct = t.consumptionTax || {};
+      if (ct.applicable && ct.method) {
+        const otherMethod = ct.method === 'simplified' ? '本則課税' : '簡易課税';
+        const otherAmt = ct.method === 'simplified' ? ct.standard : ct.simplified;
+      }
 
       // 税負担サマリーバー
       const summaryBars = t.taxSummary || [];

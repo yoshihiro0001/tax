@@ -13,7 +13,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <link rel="stylesheet" href="style.css?v=20260218c">
+  <link rel="stylesheet" href="style.css?v=20260219b">
 </head>
 <body>
   <div id="toast-container"></div>
@@ -129,19 +129,31 @@
           <select id="report-year" class="sel-year"></select>
         </div>
 
-        <!-- 税額サマリー（ヒーロー） -->
+        <!-- 真の自由資金ヒーロー -->
+        <div class="free-cash-hero" id="free-cash-hero">
+          <div class="fch-label">自由に使えるお金</div>
+          <div class="fch-val" id="free-cash-val">¥0</div>
+          <div class="fch-sub" id="free-cash-sub"></div>
+        </div>
+
+        <!-- 税負担サマリー -->
         <div class="tax-hero" id="tax-hero">
           <div class="tax-hero-label">年間税負担</div>
           <div class="tax-hero-val" id="tax-total">¥0</div>
           <div class="tax-hero-sub" id="tax-hero-sub"></div>
         </div>
 
-        <!-- 税負担の内訳（全税種） -->
+        <!-- 税負担の内訳 -->
         <div class="card card-tax-summary">
           <div id="tax-summary-bars"></div>
         </div>
 
-        <!-- 消費税の壁アラート -->
+        <!-- 赤字の貯金箱 -->
+        <div class="card card-loss" id="loss-card" style="display:none">
+          <div id="loss-content"></div>
+        </div>
+
+        <!-- 消費税アラート -->
         <div class="card cta-card" id="cta-card" style="display:none"></div>
 
         <!-- 節税提案 -->
@@ -149,7 +161,7 @@
           <div id="tax-tips"></div>
         </div>
 
-        <!-- 支払スケジュール -->
+        <!-- 支払カレンダー -->
         <div class="card card-schedule">
           <div class="card-schedule-head">
             <h3 class="card-title">支払カレンダー</h3>
@@ -629,6 +641,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260218c"></script>
+  <script src="app.js?v=20260219b"></script>
 </body>
 </html>
