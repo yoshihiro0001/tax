@@ -477,4 +477,27 @@ UI/UX大幅改善・設計思想一新変更を本番に反映するため
 - public/app.js（renderPaymentSchedule追加 + ヒーロー・税内訳・tips更新）
 
 ■結果
-完了 / 未デプロイ
+完了 / コミット: e957ad4 / デプロイ済み
+
+---
+
+【2026-02-19】
+
+■種別
+コミット / プッシュ / デプロイ
+
+■内容
+全税種計算・支払カレンダー・税負担サマリーの変更分をコミット・プッシュ・本番デプロイ。
+
+- 構文チェック（server.js / app.js）→ エラーなし
+- キャッシュバスティング → v=20260219a 確認
+- コミット: e957ad4
+- push: origin/main へ反映
+- bash deploy.sh → PM2 tax (id:4) online 確認
+- 検証①〜⑤ 全通過（HTTP 200 / キャッシュ app.js?v=20260219a）
+
+■対象
+- server.js, public/app.js, public/index.html, public/style.css
+
+■結果
+完了 / コミット: e957ad4 / デプロイ済み
