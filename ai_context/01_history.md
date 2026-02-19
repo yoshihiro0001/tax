@@ -543,4 +543,27 @@ HTML/JS全ファイルのUIテキストを変更
 - public/style.css（旧tips→新adv-groupスタイル）
 
 ■結果
-完了 / 未デプロイ
+完了 / コミット: 10cdd45 / デプロイ済み
+
+---
+
+【2026-02-19】
+
+■種別
+コミット / プッシュ / デプロイ
+
+■内容
+カテゴリ統合・個人/法人分離・提案システム刷新変更分をコミット・プッシュ・本番デプロイ。
+
+- 構文チェック（server.js / app.js）→ エラーなし
+- キャッシュバスティング更新: v=20260219a → v=20260219b
+- コミット: 10cdd45
+- push: origin/main へ反映
+- bash deploy.sh → PM2 tax (id:4) online 確認
+- 検証①〜⑤ 全通過（HTTP 200 / キャッシュ app.js?v=20260219b）
+
+■対象
+- server.js, public/app.js, public/index.html, public/style.css
+
+■結果
+完了 / コミット: 10cdd45 / デプロイ済み
