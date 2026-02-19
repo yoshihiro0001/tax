@@ -13,7 +13,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <link rel="stylesheet" href="style.css?v=20260218d">
+  <link rel="stylesheet" href="style.css?v=20260219a">
 </head>
 <body>
   <div id="toast-container"></div>
@@ -131,14 +131,28 @@
 
         <!-- 税額サマリー（ヒーロー） -->
         <div class="tax-hero" id="tax-hero">
-          <div class="tax-hero-label">推定税額</div>
+          <div class="tax-hero-label">年間税負担</div>
           <div class="tax-hero-val" id="tax-total">¥0</div>
           <div class="tax-hero-sub" id="tax-hero-sub"></div>
         </div>
 
-        <!-- 節税提案（最重要：具体的にいくら節約できるか） -->
+        <!-- 税負担の内訳（全税種） -->
+        <div class="card card-tax-summary">
+          <div id="tax-summary-bars"></div>
+        </div>
+
+        <!-- 節税提案 -->
         <div id="tax-tips-card" style="display:none">
           <div id="tax-tips"></div>
+        </div>
+
+        <!-- 支払スケジュール -->
+        <div class="card card-schedule">
+          <div class="card-schedule-head">
+            <h3 class="card-title">支払カレンダー</h3>
+            <span class="schedule-total" id="schedule-total"></span>
+          </div>
+          <div id="payment-schedule" class="payment-timeline"></div>
         </div>
 
         <!-- 収支フロー（シンプル） -->
@@ -591,6 +605,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260218c"></script>
+  <script src="app.js?v=20260219a"></script>
 </body>
 </html>

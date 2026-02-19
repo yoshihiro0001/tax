@@ -1293,5 +1293,82 @@ body { min-height: 100dvh; }
   font-size: 10px; color: var(--text3); font-weight: 400;
 }
 
+/* ============================================
+   税負担サマリーバー
+   ============================================ */
+.card-tax-summary { padding: 16px; }
+.tax-bar-item {
+  display: flex; align-items: center; gap: 10px; padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.tax-bar-item:last-child { border-bottom: none; }
+.tax-bar-icon { font-size: 18px; width: 28px; text-align: center; flex-shrink: 0; }
+.tax-bar-info { flex: 1; min-width: 0; }
+.tax-bar-label { font-size: 13px; font-weight: 600; color: var(--text); }
+.tax-bar-gauge {
+  height: 6px; background: var(--bg); border-radius: 3px; margin-top: 4px; overflow: hidden;
+}
+.tax-bar-fill {
+  height: 100%; border-radius: 3px; transition: width .6s cubic-bezier(.4,0,.2,1);
+  background: linear-gradient(90deg, var(--pri), #6366f1);
+}
+.tax-bar-fill.nhi { background: linear-gradient(90deg, #06b6d4, #0ea5e9); }
+.tax-bar-fill.biz { background: linear-gradient(90deg, #f59e0b, #f97316); }
+.tax-bar-fill.consump { background: linear-gradient(90deg, #ef4444, #dc2626); }
+.tax-bar-fill.resident { background: linear-gradient(90deg, #8b5cf6, #7c3aed); }
+.tax-bar-fill.separate { background: linear-gradient(90deg, #10b981, #059669); }
+.tax-bar-amount {
+  font-size: 15px; font-weight: 700; color: var(--text);
+  white-space: nowrap; min-width: 80px; text-align: right;
+}
+.tax-bar-pct {
+  font-size: 11px; color: var(--text3); text-align: right; min-width: 36px;
+}
+
+/* ============================================
+   支払カレンダー（タイムライン）
+   ============================================ */
+.card-schedule { padding: 16px; }
+.card-schedule-head {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
+}
+.card-schedule-head .card-title { margin: 0; }
+.schedule-total { font-size: 12px; font-weight: 700; color: var(--pri); }
+
+.payment-timeline { position: relative; padding-left: 24px; }
+.payment-timeline::before {
+  content: ''; position: absolute; left: 8px; top: 4px; bottom: 4px;
+  width: 2px; background: var(--border); border-radius: 1px;
+}
+.pt-month-group { margin-bottom: 12px; }
+.pt-month-label {
+  font-size: 12px; font-weight: 700; color: var(--text2); margin-bottom: 6px;
+  position: relative;
+}
+.pt-month-label::before {
+  content: ''; position: absolute; left: -20px; top: 4px;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--pri); border: 2px solid var(--card);
+  box-shadow: 0 0 0 2px var(--pri-bg);
+}
+.pt-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 10px; margin-bottom: 3px;
+  background: var(--bg); border-radius: var(--radius-xs);
+  font-size: 12px; transition: transform .15s;
+}
+.pt-item:active { transform: scale(.98); }
+.pt-item-left { display: flex; align-items: center; gap: 6px; }
+.pt-item-icon { font-size: 14px; }
+.pt-item-label { font-weight: 500; color: var(--text2); }
+.pt-item-date { font-size: 10px; color: var(--text3); }
+.pt-item-amount { font-weight: 700; color: var(--text); }
+
+.pt-item[data-cat="income_tax"] .pt-item-label { color: var(--pri); }
+.pt-item[data-cat="resident"] .pt-item-label { color: #7c3aed; }
+.pt-item[data-cat="nhi"] .pt-item-label { color: #0ea5e9; }
+.pt-item[data-cat="biz_tax"] .pt-item-label { color: #f97316; }
+.pt-item[data-cat="consumption"] .pt-item-label { color: #dc2626; }
+
 /* Print */
 @media print { .topbar, .bottom-nav, .overlay { display: none !important; } }

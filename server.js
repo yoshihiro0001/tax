@@ -958,6 +958,95 @@ function calcResidentTax(taxableIncome) {
   return Math.floor(taxableIncome * 0.10) + 5000;
 }
 
+// 国民健康保険料（全国平均的な料率）
+const NHI_RATES = {
+  medical: { incomeRate: 0.075, flat: 42000, cap: 650000 },
+  support: { incomeRate: 0.025, flat: 14000, cap: 220000 },
+  care:    { incomeRate: 0.020, flat: 14000, cap: 170000 },
+};
+
+function calcNHI(totalIncome, expenses, deductionTotal, members = 1, over40 = false) {
+  const base = Math.max(0, totalIncome - expenses - 430000);
+  const r = NHI_RATES;
+  const medical = Math.min(Math.floor(base * r.medical.incomeRate) + r.medical.flat * members, r.medical.cap);
+  const support = Math.min(Math.floor(base * r.support.incomeRate) + r.support.flat * members, r.support.cap);
+  const care = over40 ? Math.min(Math.floor(base * r.care.incomeRate) + r.care.flat * members, r.care.cap) : 0;
+  return { medical, support, care, total: medical + support + care, base };
+}
+
+// 個人事業税（5%、事業主控除290万円）
+function calcBusinessTax(businessNetIncome) {
+  const exempt = 2900000;
+  if (businessNetIncome <= exempt) return 0;
+  return Math.floor((businessNetIncome - exempt) * 0.05);
+}
+
+// 消費税（簡易課税、サービス業みなし仕入率50%）
+function calcConsumptionTax(totalRevenue) {
+  if (totalRevenue <= 10000000) return { applicable: false, amount: 0 };
+  const salesTax = Math.floor(totalRevenue * 10 / 110);
+  const amount = Math.floor(salesTax * 0.50);
+  return { applicable: true, amount, salesTax };
+}
+
+// 医療費控除の閾値（10万円 or 所得の5%の低い方）
+function medicalDeductionThreshold(totalIncome) {
+  return Math.min(100000, Math.floor(totalIncome * 0.05));
+}
+
+// 月末日を取得
+function lastDayOfMonth(year, month) {
+  return new Date(year, month, 0).getDate();
+}
+
+// 支払スケジュール生成（いつ・何を・いくら）
+function generatePaymentSchedule(year, taxes) {
+  const y = parseInt(year);
+  const s = [];
+  const { incomeTax, reconstructionTax, residentTax, nhiTotal, businessTax, consumptionTax } = taxes;
+  const totalIT = (incomeTax || 0) + (reconstructionTax || 0);
+
+  if (totalIT > 0) {
+    s.push({ date: `${y+1}-03-15`, label: '所得税（確定申告）', amount: totalIT, cat: 'income_tax', icon: '📝' });
+    if (totalIT > 150000) {
+      const pre = Math.floor(totalIT / 3);
+      s.push({ date: `${y+1}-07-31`, label: '予定納税（第1期）', amount: pre, cat: 'income_tax', icon: '📝' });
+      s.push({ date: `${y+1}-11-30`, label: '予定納税（第2期）', amount: pre, cat: 'income_tax', icon: '📝' });
+    }
+  }
+
+  if ((residentTax || 0) > 0) {
+    const q = Math.floor(residentTax / 4);
+    const q1 = residentTax - q * 3;
+    s.push({ date: `${y+1}-06-30`, label: '住民税①', amount: q1, cat: 'resident', icon: '🏙' });
+    s.push({ date: `${y+1}-08-31`, label: '住民税②', amount: q, cat: 'resident', icon: '🏙' });
+    s.push({ date: `${y+1}-10-31`, label: '住民税③', amount: q, cat: 'resident', icon: '🏙' });
+    s.push({ date: `${y+2}-01-31`, label: '住民税④', amount: q, cat: 'resident', icon: '🏙' });
+  }
+
+  if ((nhiTotal || 0) > 0) {
+    const per = Math.floor(nhiTotal / 10);
+    [6,7,8,9,10,11,12,1,2,3].forEach((m, i) => {
+      const yr = m >= 6 ? y + 1 : y + 2;
+      const day = lastDayOfMonth(yr, m);
+      const amt = i === 9 ? nhiTotal - per * 9 : per;
+      s.push({ date: `${yr}-${String(m).padStart(2,'0')}-${String(day).padStart(2,'0')}`, label: `国保（${i+1}期）`, amount: amt, cat: 'nhi', icon: '🏥' });
+    });
+  }
+
+  if ((businessTax || 0) > 0) {
+    const h = Math.floor(businessTax / 2);
+    s.push({ date: `${y+1}-08-31`, label: '事業税①', amount: h, cat: 'biz_tax', icon: '💼' });
+    s.push({ date: `${y+1}-11-30`, label: '事業税②', amount: businessTax - h, cat: 'biz_tax', icon: '💼' });
+  }
+
+  if (consumptionTax?.applicable) {
+    s.push({ date: `${y+1}-03-31`, label: '消費税', amount: consumptionTax.amount, cat: 'consumption', icon: '🧾' });
+  }
+
+  return s.sort((a, b) => a.date.localeCompare(b.date));
+}
+
 function calcDepreciationForYear(dep, year) {
   const purchaseYear = parseInt(dep.purchase_date.slice(0, 4));
   const purchaseMonth = parseInt(dep.purchase_date.slice(5, 7));
@@ -1053,9 +1142,10 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
     const hasInsurance = deductions.some(d => d.type === 'social_insurance');
     const deductionList = [];
     if (!hasBasic) deductionList.push({ type: 'basic', name: '基礎控除', amount: 480000, auto: true });
-    // 医療費控除: 10万円を超えた分が控除（自動計算）
-    if (!hasMedical && medicalExpenses > 100000) {
-      deductionList.push({ type: 'medical', name: '医療費控除（自動計算）', amount: medicalExpenses - 100000, auto: true });
+    // 医療費控除: 10万円 or 所得の5%の低い方を超えた分（自動計算）
+    const medThreshold = medicalDeductionThreshold(totalIncome - totalExpenses);
+    if (!hasMedical && medicalExpenses > medThreshold) {
+      deductionList.push({ type: 'medical', name: '医療費控除（自動）', amount: Math.min(medicalExpenses - medThreshold, 2000000), auto: true });
     }
     // 社会保険料控除: 保険カテゴリの経費全額が控除（自動計算）
     if (!hasInsurance && insuranceExpenses > 0) {
@@ -1110,7 +1200,10 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
 
     // 経費カテゴリ別の節税効果
     const expenseCategories = db.prepare(`SELECT category, SUM(amount) as total, COUNT(*) as count FROM expenses WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=? GROUP BY category ORDER BY total DESC`).all(book.id, year);
-    const effectiveRate = taxableIncome > 0 ? (currentBracket.rate + 0.10 + currentBracket.rate * 0.021) : 0;
+    // 実効税率: 所得税率 + 住民税10% + 復興税2.1% + 国保所得割10% + 事業税5%(290万超の場合)
+    const nhiRate = NHI_RATES.medical.incomeRate + NHI_RATES.support.incomeRate;
+    const bizTaxRate = netBusinessIncome > 2900000 ? 0.05 : 0;
+    const effectiveRate = taxableIncome > 0 ? (currentBracket.rate + 0.10 + currentBracket.rate * 0.021 + nhiRate + bizTaxRate) : 0;
     const expenseTaxImpact = expenseCategories.map(c => ({
       category: c.category,
       total: c.total,
@@ -1119,51 +1212,60 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
       effectiveRate: Math.round(effectiveRate * 1000) / 10
     }));
 
-    // カテゴリ別節税ヒント（大きい順）
+    // カテゴリ別節税ヒント
     const tips = [];
     const CATEGORY_TIPS = {
-      travel: { name: '旅費交通費', hint: '定期代・出張交通費・タクシー代も計上可能' },
-      communication: { name: '通信費', hint: '携帯代・インターネット代の按分が可能' },
-      supplies: { name: '消耗品費', hint: '10万円未満のPC・周辺機器は即時経費計上可能' },
-      advertising: { name: '広告宣伝費', hint: 'Web広告・名刺・チラシなど' },
-      entertainment: { name: '接待交際費', hint: '取引先との会食・贈答品' },
-      outsourcing: { name: '外注工賃', hint: '業務委託・外注費用' },
-      fees: { name: '支払手数料', hint: '振込手数料・クラウドサービス利用料' },
-      home_office: { name: '家事按分', hint: '自宅の家賃・光熱費を事業使用割合で計上' },
-      depreciation: { name: '減価償却費', hint: '10万円以上の資産は耐用年数に応じて分割計上' },
-      medical: { name: '医療費', hint: '年間10万円超で医療費控除の対象' },
-      insurance: { name: '保険料', hint: '社会保険料・国民健康保険は全額控除対象' }
+      travel: { name: '旅費交通費', hint: '定期代・出張交通費・タクシー代も計上可能', amt: 50000 },
+      communication: { name: '通信費', hint: '携帯代・インターネット代の按分が可能', amt: 120000 },
+      supplies: { name: '消耗品費', hint: '10万円未満のPC・事務用品は即時経費', amt: 50000 },
+      advertising: { name: '広告宣伝費', hint: 'Web広告・名刺・チラシなど', amt: 50000 },
+      entertainment: { name: '接待交際費', hint: '取引先との会食・贈答品', amt: 50000 },
+      outsourcing: { name: '外注工賃', hint: '業務委託・外注費用', amt: 100000 },
+      fees: { name: '支払手数料', hint: '振込手数料・サービス利用料', amt: 50000 },
+      home_office: { name: '家事按分', hint: '家賃・光熱費を事業割合で計上', amt: 300000 },
+      misc: { name: '雑費', hint: '少額経費の積み重ね', amt: 30000 },
     };
 
     if (taxableIncome > 0) {
-      // 未使用カテゴリの提案
       const usedCategories = new Set(expenseCategories.map(c => c.category));
+
+      // 医療費控除の特別アドバイス
+      const medThresholdVal = medicalDeductionThreshold(comprehensiveIncome - totalExpenses);
+      if (medicalExpenses > 0 && medicalExpenses <= medThresholdVal) {
+        const remaining = medThresholdVal - medicalExpenses;
+        tips.push({
+          type: 'medical_threshold', category: 'medical', label: '医療費控除まであと少し',
+          hint: `あと¥${remaining.toLocaleString()}で医療費控除が発動`,
+          saving: Math.floor(remaining * effectiveRate), currentAmount: medicalExpenses,
+        });
+      }
+
+      // 未使用カテゴリの提案
       const suggestions = [];
       for (const [catId, catInfo] of Object.entries(CATEGORY_TIPS)) {
         if (!usedCategories.has(catId)) {
-          const estimatedAmount = catId === 'home_office' ? 300000 : catId === 'communication' ? 120000 : 50000;
-          const saving = Math.floor(estimatedAmount * effectiveRate);
+          const saving = Math.floor(catInfo.amt * effectiveRate);
           if (saving > 0) {
             suggestions.push({
               type: 'new_category', category: catId, label: catInfo.name, hint: catInfo.hint,
-              estimatedExpense: estimatedAmount, saving, effectiveRatePercent: Math.round(effectiveRate * 1000) / 10
+              estimatedExpense: catInfo.amt, saving,
             });
           }
         }
       }
       suggestions.sort((a, b) => b.saving - a.saving);
-      tips.push(...suggestions.slice(0, 5));
+      tips.push(...suggestions.slice(0, 4));
 
-      // 既存カテゴリの増額提案（金額の少ないカテゴリ）
+      // 既存カテゴリの増額提案
       for (const ec of expenseCategories) {
-        if (ec.total < 100000 && CATEGORY_TIPS[ec.category]) {
-          const addAmount = 100000;
-          const saving = Math.floor(addAmount * effectiveRate);
+        if (ec.total < 200000 && CATEGORY_TIPS[ec.category]) {
+          const addAmt = 100000;
+          const saving = Math.floor(addAmt * effectiveRate);
           if (saving > 0) {
             tips.push({
               type: 'increase', category: ec.category, label: CATEGORY_TIPS[ec.category].name,
               hint: CATEGORY_TIPS[ec.category].hint, currentAmount: ec.total,
-              additionalExpense: addAmount, saving, effectiveRatePercent: Math.round(effectiveRate * 1000) / 10
+              additionalExpense: addAmt, saving,
             });
           }
         }
@@ -1197,6 +1299,36 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
       isCurrent: taxableIncome <= b.limit && (i === 0 || taxableIncome > INCOME_TAX_BRACKETS[i - 1].limit)
     }));
 
+    // 国民健康保険料
+    const nhi = calcNHI(comprehensiveIncome, totalExpenses + totalDepreciation, 0);
+
+    // 個人事業税
+    const businessTax = calcBusinessTax(netBusinessIncome);
+
+    // 消費税
+    const consumptionTax = calcConsumptionTax(totalIncome);
+
+    // 全税負担合計
+    const totalAllTaxes = totalTax + nhi.total + businessTax + (consumptionTax.applicable ? consumptionTax.amount : 0);
+
+    // 実効税率（全税込み）
+    const effectiveTotalRate = comprehensiveIncome > 0 ? Math.round(totalAllTaxes / comprehensiveIncome * 1000) / 10 : 0;
+
+    // 支払スケジュール生成
+    const paymentSchedule = generatePaymentSchedule(year, {
+      incomeTax, reconstructionTax, residentTax, nhiTotal: nhi.total, businessTax, consumptionTax
+    });
+
+    // 年間支払総額カテゴリ別サマリー
+    const taxSummary = [
+      { label: '所得税', amount: incomeTax + reconstructionTax, icon: '📝' },
+      { label: '住民税', amount: residentTax, icon: '🏙' },
+      { label: '国民健康保険', amount: nhi.total, icon: '🏥' },
+      { label: '個人事業税', amount: businessTax, icon: '💼' },
+    ];
+    if (consumptionTax.applicable) taxSummary.push({ label: '消費税', amount: consumptionTax.amount, icon: '🧾' });
+    if (separateTax > 0) taxSummary.push({ label: '分離課税', amount: separateTax, icon: '📈' });
+
     res.json({
       year,
       incomeByType: incomeByType.map(r => ({ ...r, label: INCOME_TYPE_LABELS[r.income_type] || r.income_type })),
@@ -1209,6 +1341,9 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
       netBusinessIncome, taxableIncome,
       expenseTaxImpact,
       tax: { incomeTax, reconstructionTax, residentTax, separateTax, totalTax },
+      nhi, businessTax, consumptionTax,
+      totalAllTaxes, effectiveTotalRate,
+      taxSummary, paymentSchedule,
       currentBracket: { rate: currentBracket.rate, ratePercent: Math.round(currentBracket.rate * 100) },
       tips, nextBracketInfo, bracketMap,
       labels: { incomeTypes: INCOME_TYPE_LABELS, deductionTypes: DEDUCTION_LABELS }

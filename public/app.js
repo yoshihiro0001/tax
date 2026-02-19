@@ -870,12 +870,32 @@ const App = {
       const ctd = t.comprehensiveTaxDetail || {};
       const cb = t.currentBracket || { rate: 0, ratePercent: 0 };
 
-      // ヒーロー
-      qs('#tax-total').textContent = `¥${(tax.totalTax || 0).toLocaleString()}`;
-      const heroSub = [];
-      if ((ctd.totalComprehensiveTax || 0) > 0) heroSub.push(`総合課税 ¥${ctd.totalComprehensiveTax.toLocaleString()}`);
-      if ((tax.separateTax || 0) > 0) heroSub.push(`分離課税 ¥${tax.separateTax.toLocaleString()}`);
-      qs('#tax-hero-sub').textContent = heroSub.join(' ＋ ');
+      // ヒーロー（全税負担）
+      const allTaxes = t.totalAllTaxes || tax.totalTax || 0;
+      qs('#tax-total').textContent = `¥${allTaxes.toLocaleString()}`;
+      const effRate = t.effectiveTotalRate || 0;
+      qs('#tax-hero-sub').textContent = effRate > 0 ? `実効税率 ${effRate}%` : '';
+
+      // 税負担サマリーバー
+      const summaryBars = t.taxSummary || [];
+      const maxTaxAmt = Math.max(...summaryBars.map(s => s.amount), 1);
+      const catColors = { '所得税': '', '住民税': 'resident', '国民健康保険': 'nhi', '個人事業税': 'biz', '消費税': 'consump', '分離課税': 'separate' };
+      qs('#tax-summary-bars').innerHTML = summaryBars.filter(s => s.amount > 0).map(s => {
+        const pct = Math.round(s.amount / allTaxes * 100);
+        const fillCls = catColors[s.label] || '';
+        return `<div class="tax-bar-item">
+          <span class="tax-bar-icon">${s.icon}</span>
+          <div class="tax-bar-info">
+            <div class="tax-bar-label">${s.label}</div>
+            <div class="tax-bar-gauge"><div class="tax-bar-fill ${fillCls}" style="width:${(s.amount/maxTaxAmt*100).toFixed(1)}%"></div></div>
+          </div>
+          <span class="tax-bar-amount">¥${s.amount.toLocaleString()}</span>
+          <span class="tax-bar-pct">${pct}%</span>
+        </div>`;
+      }).join('');
+
+      // 支払スケジュール
+      this.renderPaymentSchedule(t.paymentSchedule || []);
 
       // 収入区分と課税方式
       const tbtWrap = qs('#tax-by-type');
@@ -915,15 +935,25 @@ const App = {
         if (tpRow) tpRow.style.display = 'none';
       }
 
-      // 税額内訳（詳細）
+      // 税額内訳（全税種）
       let bdHtml = '';
-      bdHtml += `<div class="tax-bd-row"><div class="tax-bd-left"><span class="tax-bd-label">所得税</span><span class="tax-bd-rate">課税所得 ¥${(t.taxableIncome || 0).toLocaleString()} × ${cb.ratePercent}%</span></div><span class="tax-bd-val">¥${(tax.incomeTax || 0).toLocaleString()}</span></div>`;
-      bdHtml += `<div class="tax-bd-row"><div class="tax-bd-left"><span class="tax-bd-label">復興特別所得税</span><span class="tax-bd-rate">所得税 × 2.1%</span></div><span class="tax-bd-val">¥${(tax.reconstructionTax || 0).toLocaleString()}</span></div>`;
-      bdHtml += `<div class="tax-bd-row"><div class="tax-bd-left"><span class="tax-bd-label">住民税</span><span class="tax-bd-rate">課税所得 × 10%</span></div><span class="tax-bd-val">¥${(tax.residentTax || 0).toLocaleString()}</span></div>`;
-      if ((tax.separateTax || 0) > 0) {
-        bdHtml += `<div class="tax-bd-row"><div class="tax-bd-left"><span class="tax-bd-label">分離課税（株・FX）</span><span class="tax-bd-rate">利益 ¥${(t.separateIncome || 0).toLocaleString()} × 20.315%</span></div><span class="tax-bd-val">¥${tax.separateTax.toLocaleString()}</span></div>`;
+      bdHtml += `<div class="tax-bd-row"><div class="tax-bd-left"><span class="tax-bd-label">所得税</span><span class="tax-bd-rate">課税所得 × ${cb.ratePercent}%</span></div><span class="tax-bd-val">¥${(tax.incomeTax || 0).toLocaleString()}</span></div>`;
+      bdHtml += `<div class="tax-bd-row"><div class="tax-bd-left"><span class="tax-bd-label">復興特別所得税</span><span class="tax-bd-rate">×2.1%</span></div><span class="tax-bd-val">¥${(tax.reconstructionTax || 0).toLocaleString()}</span></div>`;
+      bdHtml += `<div class="tax-bd-row"><div class="tax-bd-left"><span class="tax-bd-label">住民税</span><span class="tax-bd-rate">×10%</span></div><span class="tax-bd-val">¥${(tax.residentTax || 0).toLocaleString()}</span></div>`;
+      const nhi = t.nhi || {};
+      if ((nhi.total || 0) > 0) {
+        bdHtml += `<div class="tax-bd-row"><div class="tax-bd-left"><span class="tax-bd-label">国民健康保険</span><span class="tax-bd-rate">医療+支援+介護</span></div><span class="tax-bd-val">¥${nhi.total.toLocaleString()}</span></div>`;
       }
-      bdHtml += `<div class="tax-bd-row total"><span>合計</span><span class="tax-bd-val">¥${(tax.totalTax || 0).toLocaleString()}</span></div>`;
+      if ((t.businessTax || 0) > 0) {
+        bdHtml += `<div class="tax-bd-row"><div class="tax-bd-left"><span class="tax-bd-label">個人事業税</span><span class="tax-bd-rate">×5%</span></div><span class="tax-bd-val">¥${t.businessTax.toLocaleString()}</span></div>`;
+      }
+      if (t.consumptionTax?.applicable) {
+        bdHtml += `<div class="tax-bd-row"><div class="tax-bd-left"><span class="tax-bd-label">消費税</span><span class="tax-bd-rate">簡易課税</span></div><span class="tax-bd-val">¥${t.consumptionTax.amount.toLocaleString()}</span></div>`;
+      }
+      if ((tax.separateTax || 0) > 0) {
+        bdHtml += `<div class="tax-bd-row"><div class="tax-bd-left"><span class="tax-bd-label">分離課税</span><span class="tax-bd-rate">×20.315%</span></div><span class="tax-bd-val">¥${tax.separateTax.toLocaleString()}</span></div>`;
+      }
+      bdHtml += `<div class="tax-bd-row total"><span>年間税負担合計</span><span class="tax-bd-val">¥${(t.totalAllTaxes || tax.totalTax || 0).toLocaleString()}</span></div>`;
       qs('#tax-breakdown').innerHTML = bdHtml;
 
       // 経費の節税効果
@@ -951,18 +981,20 @@ const App = {
       if ((t.tips || []).length > 0 || t.nextBracketInfo) {
         qs('#tax-tips-card').style.display = '';
         let tipsHtml = '';
-        if (t.nextBracketInfo) {
-          tipsHtml += `<div class="tax-bracket-hint">💎 あと¥${t.nextBracketInfo.expenseNeeded.toLocaleString()}の経費で税率${t.nextBracketInfo.currentRatePercent}% → ${t.nextBracketInfo.lowerRatePercent}%</div>`;
+        if (t.nextBracketInfo && t.nextBracketInfo.expenseNeeded > 0) {
+          tipsHtml += `<div class="tax-bracket-hint">💎 経費+¥${t.nextBracketInfo.expenseNeeded.toLocaleString()}で税率 ${t.nextBracketInfo.currentRatePercent}%→${t.nextBracketInfo.lowerRatePercent}%</div>`;
         }
-        tipsHtml += (t.tips || []).slice(0, 3).map(tip => {
+        tipsHtml += (t.tips || []).slice(0, 5).map(tip => {
           const icon = this.categoryIcon(tip.category);
-          const desc = tip.type === 'new_category' ? tip.hint : `現在¥${tip.currentAmount.toLocaleString()}`;
+          let desc = tip.hint || '';
+          if (tip.type === 'increase' && tip.currentAmount) desc = `現在¥${tip.currentAmount.toLocaleString()} → +¥${(tip.additionalExpense || 100000).toLocaleString()}`;
+          if (tip.type === 'medical_threshold') desc = tip.hint;
           return `<div class="tax-tip">
             <div class="tax-tip-body">
               <div class="tax-tip-head"><span class="tax-tip-category">${icon} ${tip.label}</span></div>
               <div class="tax-tip-desc">${desc}</div>
             </div>
-            <span class="tax-tip-saving">-¥${tip.saving.toLocaleString()}</span>
+            <span class="tax-tip-saving">-¥${(tip.saving || 0).toLocaleString()}</span>
           </div>`;
         }).join('');
         qs('#tax-tips').innerHTML = tipsHtml;
@@ -975,6 +1007,44 @@ const App = {
       // 減価償却一覧
       this.renderDepreciations(t.depreciationDetails || [], y);
     } catch (err) { this.toast(err.message, 'error'); }
+  },
+
+  renderPaymentSchedule(schedule) {
+    const wrap = qs('#payment-schedule');
+    if (!wrap || !schedule.length) {
+      if (wrap) wrap.innerHTML = '<div style="text-align:center;color:var(--text3);font-size:13px;padding:12px">データを入力すると支払予定が表示されます</div>';
+      const st = qs('#schedule-total');
+      if (st) st.textContent = '';
+      return;
+    }
+    const total = schedule.reduce((s, p) => s + (p.amount || 0), 0);
+    const st = qs('#schedule-total');
+    if (st) st.textContent = `合計 ¥${total.toLocaleString()}`;
+
+    const grouped = {};
+    schedule.forEach(p => {
+      const d = p.date || '';
+      const ym = d.slice(0, 7);
+      if (!grouped[ym]) grouped[ym] = [];
+      grouped[ym].push(p);
+    });
+
+    const months = ['', '1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+    wrap.innerHTML = Object.entries(grouped).map(([ym, items]) => {
+      const m = parseInt(ym.slice(5));
+      const yr = ym.slice(0, 4);
+      return `<div class="pt-month-group">
+        <div class="pt-month-label">${yr}年${months[m] || (m + '月')}</div>
+        ${items.map(p => `<div class="pt-item" data-cat="${p.cat}">
+          <div class="pt-item-left">
+            <span class="pt-item-icon">${p.icon || '📋'}</span>
+            <span class="pt-item-label">${p.label}</span>
+            <span class="pt-item-date">${p.date.slice(5)}</span>
+          </div>
+          <span class="pt-item-amount">¥${(p.amount || 0).toLocaleString()}</span>
+        </div>`).join('')}
+      </div>`;
+    }).join('');
   },
 
   renderDeductions(deductions, year) {
