@@ -637,3 +637,62 @@ HTML/JS全ファイルのUIテキストを変更
 
 ■結果
 完了 / コミット: de5ff77 / デプロイ済み
+
+---
+
+【2026-02-19c】
+
+■種別
+設計変更（税務エンジン全面刷新 — 税務属性連動型アーキテクチャ）
+
+■内容
+
+### 1. TAX_ATTRIBUTES（税務属性マップ）
+全支出カテゴリに個人/法人それぞれの税務属性を定義。
+deductible, ctax(課税/非課税/免税), withholding(源泉), homeOffice(按分), isAsset(資産), deductionType(控除種別) 等を自動判定。
+INCOME_TAX_ATTRも同様に収入タイプごとの消費税区分・課税方式を定義。
+
+### 2. 繰越欠損金（loss_carryforward）
+- 新テーブル loss_carryforward 追加
+- 赤字発生時に自動保存、黒字年度に自動適用
+- 個人3年/法人10年の繰越期限対応
+- 「赤字の貯金箱」UI: 繰越額と将来節税見込みを資産として表示
+
+### 3. 社保フィードバックループ
+NHI計算→所得控除→課税所得再計算の反復ループで正確な手残りを算出。
+NHI自体を控除として再計算に反映。
+
+### 4. 消費税最適化（簡易 vs 本則）
+課税売上と課税仕入額から簡易課税/本則課税の両方を算出し、有利な方を自動選択。
+savings（差額）も返却。
+
+### 5. 源泉徴収スケジュール
+外注・人件費(labor)カテゴリの月別支出から源泉所得税額を自動算出。
+100万以下10.21%/超20.42%で計算し、毎月10日の納付スケジュールを生成。
+
+### 6. 収入タイプ拡張
+助成金・補助金(subsidy)、還付金(refund)を追加。消費税「対象外」として正しく処理。
+
+### 7. 「真の自由資金」ダッシュボード
+収入 − 支出 − 全税負担 = 本当に使えるお金を緑ヒーローで大きく表示。
+赤字時は赤背景に自動切替。
+
+### 8. 消費税壁アラート
+課税売上の1,000万円到達度を常時監視。700万超/900万超/超過で段階的アラート。
+
+■対象
+- server.js（TAX_ATTRIBUTES, loss_carryforward, calcConsumptionTax改良, calcWithNHILoop, generateWithholdingSchedule, saveLossIfNegative/applyLossCarryforward/getLossCarryforward, tax-simulation全面統合, 収入タイプ拡張）
+- public/app.js（freeCash描画, lossCarryforward描画, consumptionTaxAlert, 収入タイプ拡張）
+- public/index.html（free-cash-hero, loss-card, cta-card, キャッシュバスティング v=20260219b）
+- public/style.css（free-cash-hero, card-loss, cta-level スタイル）
+
+■デプロイ記録
+- 構文チェック（server.js / app.js）→ エラーなし（consumptionTaxAlert重複を修正済み）
+- キャッシュバスティング: v=20260219b（変更済み確認）
+- コミット: 672efe0
+- push: origin/main へ反映
+- bash deploy.sh → PM2 tax (id:4) online 確認
+- 検証①〜④ 全通過（HTTP 200 / キャッシュ app.js?v=20260219b）
+
+■結果
+完了 / コミット: 672efe0 / デプロイ済み
