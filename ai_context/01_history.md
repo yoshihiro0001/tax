@@ -763,9 +763,13 @@ savings（差額）も返却。
 - public/style.css（折りたたみ, 階層カテゴリ, オンボーディング, プロフィール）
 - ai_context/00_constitution.md（ゴール追記, カテゴリ方針追記）
 
-■構文チェック
-- server.js → OK
-- public/app.js → OK
+■デプロイ記録
+- 構文チェック（server.js / app.js）→ エラーなし
+- キャッシュバスティング: v=20260222
+- コミット: d4b6f64
+- push: origin/main へ反映
+- bash deploy.sh → PM2 tax (id:4) online 確認
+- 検証①〜⑤ 全通過（HTTP 200 / キャッシュ app.js?v=20260222 / /api/profile → 401認証正常）
 
 ■結果
-実装完了 / 未デプロイ（デプロイは02_operations.mdに従って別途実行）
+完了 / コミット: d4b6f64 / デプロイ済み
