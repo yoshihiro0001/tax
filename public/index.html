@@ -13,7 +13,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <link rel="stylesheet" href="style.css?v=20260222">
+  <link rel="stylesheet" href="style.css?v=20260222b">
 </head>
 <body>
   <div id="toast-container"></div>
@@ -82,17 +82,19 @@
         </div>
 
         <!-- レシート取り込み -->
-        <label class="capture-hero" for="receipt-input">
-          <input type="file" id="receipt-input" accept="image/*" capture="environment" class="sr-only">
-          <div class="capture-hero-glow"></div>
-          <div class="capture-hero-inner">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-          </div>
-        </label>
-        <label class="gallery-icon" for="gallery-input">
-          <input type="file" id="gallery-input" accept="image/*" multiple class="sr-only">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-        </label>
+        <div class="capture-area">
+          <label class="capture-hero" for="receipt-input">
+            <input type="file" id="receipt-input" accept="image/*" capture="environment" class="sr-only">
+            <div class="capture-hero-glow"></div>
+            <div class="capture-hero-inner">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+            </div>
+          </label>
+          <label class="gallery-btn" for="gallery-input">
+            <input type="file" id="gallery-input" accept="image/*" multiple class="sr-only">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="22" height="22"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          </label>
+        </div>
 
         <div class="sub-actions">
           <button class="btn-sub" id="btn-add-income">
@@ -227,18 +229,43 @@
           <div class="rpt-bd-empty" id="rpt-income-empty" style="display:none">データなし</div>
         </div>
 
+        <!-- 給与・社保（折りたたみ） -->
+        <div class="card" id="salary-section" style="display:none">
+          <div class="card-fold-head" id="fold-salary-head">
+            <span>給与・社会保険</span>
+            <span class="fold-toggle">›</span>
+          </div>
+          <div class="card-fold-body" id="fold-salary-body" style="display:none">
+            <div id="salary-list"></div>
+            <button class="btn-outline btn-sm" id="btn-add-salary" style="margin-top:8px">＋ 給与を追加</button>
+            <div id="insurance-check-area" class="insurance-check-area" style="display:none"></div>
+          </div>
+        </div>
+
+        <!-- 借入（折りたたみ） -->
+        <div class="card" id="loan-section" style="display:none">
+          <div class="card-fold-head" id="fold-loan-head">
+            <span>借入</span>
+            <span class="fold-toggle">›</span>
+          </div>
+          <div class="card-fold-body" id="fold-loan-body" style="display:none">
+            <div id="loan-list"></div>
+            <button class="btn-outline btn-sm" id="btn-add-loan" style="margin-top:8px">＋ 借入を追加</button>
+          </div>
+        </div>
+
         <!-- 月別推移 -->
         <div class="card"><h3 class="card-title">月別推移</h3><div class="chart-wrap"><canvas id="chart-report"></canvas></div></div>
 
-        <!-- 分析（トグル） -->
-        <div class="analytics-toggle">
-          <button class="btn-analytics-toggle" id="btn-toggle-analytics">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-            分析
-          </button>
-        </div>
-        <div class="card" id="analytics-section" style="display:none">
-          <div id="analytics-content"></div>
+        <!-- 分析 -->
+        <div class="card">
+          <div class="card-fold-head" id="fold-analytics-head">
+            <span>分析</span>
+            <span class="fold-toggle">›</span>
+          </div>
+          <div class="card-fold-body" id="fold-analytics-body" style="display:none">
+            <div id="analytics-content"></div>
+          </div>
         </div>
 
         <!-- 控除の管理（折りたたみ） -->
@@ -408,6 +435,52 @@
         <button class="btn-danger btn-full" id="btn-logout">ログアウト</button>
       </section>
 
+      <!-- ===== シミュレーション ===== -->
+      <section class="view" id="view-simulation">
+        <div class="view-head"><h1>未来シミュレーション</h1></div>
+
+        <!-- 現在のサマリー -->
+        <div class="sim-section">
+          <div class="sim-section-label">現在の状況</div>
+          <div class="sim-cards" id="sim-actual"></div>
+        </div>
+
+        <!-- 入力エリア -->
+        <div class="sim-section">
+          <div class="sim-section-label">数値を変更して比較</div>
+          <div class="sim-inputs">
+            <div class="fg"><label>年間売上</label><input type="number" class="fi" id="sim-income" placeholder="0" inputmode="numeric"></div>
+            <div class="fg"><label>年間支出</label><input type="number" class="fi" id="sim-expense" placeholder="0" inputmode="numeric"></div>
+            <div class="fg"><label>月額給与</label><input type="number" class="fi" id="sim-salary" placeholder="0" inputmode="numeric"></div>
+            <div class="fg"><label>保険種別</label>
+              <select class="fi" id="sim-insurance-type">
+                <option value="national">国民健康保険</option>
+                <option value="social">社会保険</option>
+              </select>
+            </div>
+            <div class="fg"><label>確定申告</label>
+              <select class="fi" id="sim-filing-type">
+                <option value="white">白色申告</option>
+                <option value="blue">青色申告</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn-primary btn-full" id="btn-run-sim" style="margin-top:12px">計算する</button>
+        </div>
+
+        <!-- 結果 -->
+        <div class="sim-section" id="sim-result-section" style="display:none">
+          <div class="sim-section-label">シミュレーション結果</div>
+          <div class="sim-cards" id="sim-result"></div>
+        </div>
+
+        <!-- 差分 -->
+        <div class="sim-section" id="sim-diff-section" style="display:none">
+          <div class="sim-section-label">現在との差分</div>
+          <div class="sim-cards" id="sim-diff"></div>
+        </div>
+      </section>
+
       <!-- ===== 取引一覧 (すべて見る) ===== -->
       <section class="view" id="view-history">
         <div class="view-head">
@@ -440,6 +513,10 @@
       <button class="bnav-item" data-view="report">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
         <span>レポート</span>
+      </button>
+      <button class="bnav-item" data-view="simulation">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        <span>予測</span>
       </button>
       <button class="bnav-item" data-view="settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -684,6 +761,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260222"></script>
+  <script src="app.js?v=20260222b"></script>
 </body>
 </html>

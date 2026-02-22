@@ -201,6 +201,55 @@ db.exec(`
   );
 `);
 
+// === insurance_type カラム追加 ===
+try { db.exec("ALTER TABLE user_profiles ADD COLUMN insurance_type TEXT DEFAULT 'national'"); } catch (e) {}
+try { db.exec("ALTER TABLE user_profiles ADD COLUMN social_insurance_submitted INTEGER DEFAULT 0"); } catch (e) {}
+try { db.exec("ALTER TABLE user_profiles ADD COLUMN national_insurance_withdrawn INTEGER DEFAULT 0"); } catch (e) {}
+
+// === 給与管理テーブル ===
+db.exec(`
+  CREATE TABLE IF NOT EXISTS salary_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    book_id INTEGER NOT NULL,
+    amount INTEGER NOT NULL,
+    pay_date TEXT NOT NULL,
+    employer_name TEXT,
+    social_insurance_applied INTEGER DEFAULT 0,
+    auto_record_income INTEGER DEFAULT 1,
+    income_recorded INTEGER DEFAULT 0,
+    social_health INTEGER DEFAULT 0,
+    social_pension INTEGER DEFAULT 0,
+    social_employment INTEGER DEFAULT 0,
+    memo TEXT,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+  );
+`);
+
+// === 借入管理テーブル ===
+db.exec(`
+  CREATE TABLE IF NOT EXISTS loans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    book_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    principal INTEGER NOT NULL,
+    annual_rate REAL NOT NULL DEFAULT 2.0,
+    term_months INTEGER NOT NULL DEFAULT 360,
+    start_date TEXT NOT NULL,
+    monthly_payment INTEGER DEFAULT 0,
+    purpose TEXT DEFAULT 'business',
+    interest_deductible INTEGER DEFAULT 1,
+    memo TEXT,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+  );
+`);
+
+// === 資産管理拡張 ===
+try { db.exec("ALTER TABLE depreciations ADD COLUMN asset_type TEXT DEFAULT 'equipment'"); } catch (e) {}
+try { db.exec("ALTER TABLE depreciations ADD COLUMN land_value INTEGER DEFAULT 0"); } catch (e) {}
+try { db.exec("ALTER TABLE depreciations ADD COLUMN building_age INTEGER DEFAULT 0"); } catch (e) {}
+
 // === 運用管理テーブル ===
 db.exec(`
   CREATE TABLE IF NOT EXISTS error_logs (
@@ -282,6 +331,7 @@ const TAX_ATTRIBUTES = {
   life_insurance:     { individual: { deductible: false, deductionType: 'life_insurance', ctax: 'exempt' }, corporate: { deductible: true, ctax: 'exempt' } },
   earthquake_insurance:{ individual: { deductible: false, deductionType: 'earthquake_insurance', ctax: 'exempt' }, corporate: { deductible: true, ctax: 'exempt' } },
   donation:           { individual: { deductible: false, deductionType: 'donation', ctax: 'exempt' }, corporate: { deductible: true, ctax: 'exempt' } },
+  medical_high:       { individual: { deductible: false, deductionType: 'medical', ctax: 'exempt' }, corporate: { deductible: false, ctax: 'exempt' } },
 };
 
 const INCOME_TAX_ATTR = {
@@ -1877,7 +1927,18 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
       taxAttributes: TAX_ATTRIBUTES,
       labels: { incomeTypes: INCOME_TYPE_LABELS, deductionTypes: DEDUCTION_LABELS },
       carryoverLoss,
-      healthScore
+      salaryEntries: db.prepare("SELECT * FROM salary_entries WHERE book_id=? AND strftime('%Y',pay_date)=? ORDER BY pay_date").all(book.id, year),
+      loans: (() => {
+        const ls = db.prepare('SELECT * FROM loans WHERE book_id=?').all(book.id);
+        return ls.map(l => {
+          const r = l.annual_rate / 100 / 12;
+          const n = l.term_months;
+          const monthly = r > 0 ? Math.round(l.principal * r * Math.pow(1+r,n)/(Math.pow(1+r,n)-1)) : Math.round(l.principal / n);
+          return { ...l, monthly_payment: monthly, yearly_interest: Math.round(l.principal * l.annual_rate / 100) };
+        });
+      })(),
+      insuranceType: profile.insurance_type || 'national',
+      insuranceChecks: { social_submitted: profile.social_insurance_submitted || 0, national_withdrawn: profile.national_insurance_withdrawn || 0 }
     });
   } catch (err) { logError(err.message, '/api/tax-simulation', req.userId, err.stack); res.status(500).json({ error: err.message }); }
 });
@@ -1948,6 +2009,153 @@ router.delete('/api/depreciations/:id', auth, (req, res) => {
     if (!d) return res.status(404).json({ error: '見つかりません' });
     db.prepare('DELETE FROM depreciations WHERE id=?').run(d.id);
     res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ===== 給与管理 API =====
+router.get('/api/salary-entries', auth, (req, res) => {
+  try {
+    const book = bookAccess(req);
+    if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
+    const rows = db.prepare('SELECT * FROM salary_entries WHERE book_id=? ORDER BY pay_date DESC').all(book.id);
+    res.json({ entries: rows });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/api/salary-entries', auth, (req, res) => {
+  try {
+    const book = bookAccess(req);
+    if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
+    const { amount, pay_date, employer_name, social_insurance_applied, auto_record_income, memo } = req.body;
+    const monthly = parseInt(amount) || 0;
+    let sh = 0, sp = 0, se = 0;
+    if (social_insurance_applied) {
+      sh = Math.round(monthly * 0.04985);
+      sp = Math.round(monthly * 0.0915);
+      se = Math.round(monthly * 0.006);
+    }
+    const r = db.prepare(`INSERT INTO salary_entries (book_id, amount, pay_date, employer_name, social_insurance_applied, auto_record_income, social_health, social_pension, social_employment, memo) VALUES (?,?,?,?,?,?,?,?,?,?)`)
+      .run(book.id, monthly, pay_date, employer_name || '', social_insurance_applied ? 1 : 0, auto_record_income !== false ? 1 : 0, sh, sp, se, memo || '');
+    if (auto_record_income !== false) {
+      db.prepare(`INSERT INTO income (book_id, date, amount, type, income_type, description, status) VALUES (?,?,?,'振込','salary',?,?)`).run(book.id, pay_date, monthly, `給与 ${employer_name || ''}`.trim(), 'approved');
+      db.prepare('UPDATE salary_entries SET income_recorded=1 WHERE id=?').run(r.lastInsertRowid);
+    }
+    const entry = db.prepare('SELECT * FROM salary_entries WHERE id=?').get(r.lastInsertRowid);
+    res.json({ entry });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/api/salary-entries/:id', auth, (req, res) => {
+  try {
+    const row = db.prepare('SELECT s.* FROM salary_entries s JOIN books b ON s.book_id=b.id WHERE s.id=? AND b.user_id=?').get(req.params.id, req.userId);
+    if (!row) return res.status(404).json({ error: '見つかりません' });
+    db.prepare('DELETE FROM salary_entries WHERE id=?').run(row.id);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ===== 借入管理 API =====
+router.get('/api/loans', auth, (req, res) => {
+  try {
+    const book = bookAccess(req);
+    if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
+    const rows = db.prepare('SELECT * FROM loans WHERE book_id=? ORDER BY start_date DESC').all(book.id);
+    const enriched = rows.map(loan => {
+      const r = loan.annual_rate / 100 / 12;
+      const n = loan.term_months;
+      const monthly = r > 0 ? Math.round(loan.principal * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1)) : Math.round(loan.principal / n);
+      const start = new Date(loan.start_date);
+      const now = new Date();
+      const elapsed = Math.max(0, (now.getFullYear() - start.getFullYear()) * 12 + now.getMonth() - start.getMonth());
+      let remainingPrincipal = loan.principal;
+      let totalInterest = 0;
+      for (let i = 0; i < Math.min(elapsed, n); i++) {
+        const interest = Math.round(remainingPrincipal * r);
+        const principalPart = monthly - interest;
+        remainingPrincipal = Math.max(0, remainingPrincipal - principalPart);
+        totalInterest += interest;
+      }
+      const yearlyInterest = Math.round(loan.principal * loan.annual_rate / 100);
+      return { ...loan, monthly_payment: monthly, remaining_principal: Math.round(remainingPrincipal), total_interest_paid: totalInterest, yearly_interest: yearlyInterest, months_elapsed: elapsed, months_remaining: Math.max(0, n - elapsed) };
+    });
+    res.json({ loans: enriched });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/api/loans', auth, (req, res) => {
+  try {
+    const book = bookAccess(req);
+    if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
+    const { name, principal, annual_rate, term_months, start_date, purpose, interest_deductible, memo } = req.body;
+    const r = db.prepare(`INSERT INTO loans (book_id, name, principal, annual_rate, term_months, start_date, purpose, interest_deductible, memo) VALUES (?,?,?,?,?,?,?,?,?)`)
+      .run(book.id, name, parseInt(principal) || 0, parseFloat(annual_rate) || 2.0, parseInt(term_months) || 360, start_date, purpose || 'business', interest_deductible !== false ? 1 : 0, memo || '');
+    res.json({ id: r.lastInsertRowid });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete('/api/loans/:id', auth, (req, res) => {
+  try {
+    const row = db.prepare('SELECT l.* FROM loans l JOIN books b ON l.book_id=b.id WHERE l.id=? AND b.user_id=?').get(req.params.id, req.userId);
+    if (!row) return res.status(404).json({ error: '見つかりません' });
+    db.prepare('DELETE FROM loans WHERE id=?').run(row.id);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ===== 未来シミュレーション API =====
+router.post('/api/simulation', auth, (req, res) => {
+  try {
+    const book = bookAccess(req);
+    if (!book) return res.status(403).json({ error: '帳簿アクセス権がありません' });
+    const year = new Date().getFullYear();
+    const profile = db.prepare('SELECT * FROM user_profiles WHERE user_id = ?').get(req.userId) || {};
+    const overrides = req.body;
+
+    const baseIncome = parseInt(overrides.income) || db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM income WHERE book_id=? AND strftime('%Y',date)=? AND status='approved'").get(book.id, String(year)).t;
+    const baseExpense = parseInt(overrides.expense) || db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND strftime('%Y',date)=? AND status='approved'").get(book.id, String(year)).t;
+    const salaryAmount = parseInt(overrides.salary) || 0;
+    const insuranceType = overrides.insurance_type || profile.insurance_type || 'national';
+    const filingType = overrides.filing_type || profile.filing_type || 'white';
+
+    const blueDeduction = filingType === 'blue' ? (parseInt(profile.blue_return_type || '10') * 10000) : 0;
+    const basicDeduction = 480000;
+    const profit = Math.max(0, baseIncome - baseExpense);
+    const taxableIncome = Math.max(0, profit - blueDeduction - basicDeduction);
+
+    const calcIncomeTax = (ti) => {
+      const brackets = [[1950000,.05,0],[3300000,.1,97500],[6950000,.2,427500],[9000000,.23,636000],[18000000,.33,1536000],[40000000,.40,2796000],[Infinity,.45,4796000]];
+      for (const [lim, rate, ded] of brackets) { if (ti <= lim) return Math.floor(ti * rate - ded); }
+      return 0;
+    };
+
+    const incomeTax = calcIncomeTax(taxableIncome);
+    const reconstructionTax = Math.floor(incomeTax * 0.021);
+    const residentTax = Math.floor(taxableIncome * 0.1) + 5000;
+
+    let socialInsurance = 0, nationalInsurance = 0;
+    if (insuranceType === 'social' && salaryAmount > 0) {
+      socialInsurance = Math.round(salaryAmount * 12 * (0.04985 + 0.0915 + 0.006));
+      nationalInsurance = 0;
+    } else {
+      const nhiBase = Math.max(0, taxableIncome - 430000);
+      const medical = Math.min(Math.floor(nhiBase * 0.0789) + 42100, 650000);
+      const support = Math.min(Math.floor(nhiBase * 0.0289) + 13200, 240000);
+      const care = (profile.over40) ? Math.min(Math.floor(nhiBase * 0.0222) + 16600, 170000) : 0;
+      nationalInsurance = medical + support + care;
+    }
+
+    const businessTax = taxableIncome > 2900000 ? Math.floor((taxableIncome - 2900000) * 0.05) : 0;
+    const totalTax = incomeTax + reconstructionTax + residentTax + nationalInsurance + socialInsurance + businessTax;
+    const handRemaining = baseIncome - baseExpense - totalTax;
+
+    res.json({
+      input: { income: baseIncome, expense: baseExpense, salary: salaryAmount, insurance_type: insuranceType, filing_type: filingType },
+      result: {
+        profit, taxableIncome, incomeTax, reconstructionTax, residentTax,
+        nationalInsurance, socialInsurance, businessTax, totalTax, handRemaining,
+        blueDeduction, basicDeduction
+      }
+    });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

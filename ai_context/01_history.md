@@ -773,3 +773,26 @@ savings（差額）も返却。
 
 ■結果
 完了 / コミット: d4b6f64 / デプロイ済み
+
+---
+
+## Phase 9: 社保/国保排他エンジン・給与管理・借入管理・未来シミュレーション・UI改善（2026-02-22）
+
+### 1. DB拡張
+- user_profiles: insurance_type, social_insurance_submitted, national_insurance_withdrawn
+- salary_entries テーブル: 給与・社保天引き・帳簿連動
+- loans テーブル: 借入・元利分解
+- depreciations: asset_type, land_value, building_age
+
+### 2. API追加
+- /api/salary-entries, /api/loans, /api/simulation
+
+### 3. 社保/国保排他 + 行政手続きチェック + 給与天引き自動計算
+### 4. レポートエラー修正（存在しないHTML要素参照の削除）
+### 5. レポート拡張（給与・借入セクション折りたたみ）
+### 6. 未来シミュレーションページ（4つ目のナビタブ「予測」）
+### 7. UI改善（撮影エリア・分析→折りたたみ・カテゴリヘルプ・医療費サブカテゴリ）
+
+■対象: server.js, app.js, index.html, style.css, 00_constitution.md
+■構文チェック: server.js OK / app.js OK
+■結果: 実装完了 / 未デプロイ

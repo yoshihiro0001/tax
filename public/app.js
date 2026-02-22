@@ -27,7 +27,8 @@ const App = {
       { id: 'insurance', name: '社会保険・年金', icon: '🛡', desc: '全額が所得控除' },
       { id: 'life_insurance', name: '生命保険', icon: '💚', desc: '生命保険料控除' },
       { id: 'earthquake_insurance', name: '地震保険', icon: '🏔', desc: '地震保険料控除' },
-      { id: 'medical', name: '医療費', icon: '🏥', desc: '10万円超で医療費控除' },
+      { id: 'medical', name: '医療費（通常）', icon: '🏥', desc: '10万円超で医療費控除' },
+      { id: 'medical_high', name: '高額医療', icon: '🏥', desc: '高額療養費の自己負担分' },
       { id: 'donation', name: '寄附金', icon: '🎁', desc: 'ふるさと納税等' },
     ]},
     { id: 'tax', label: '税金', icon: '🏛', items: [
@@ -172,9 +173,10 @@ const App = {
           <span class="hcat-group-arrow">${isCollapsed ? '＋' : ''}</span>
         </div>
         <div class="hcat-items"${isCollapsed ? ' style="display:none"' : ''}>
-          ${g.items.map(item => `<div class="hcat-item${item.id === selectedId ? ' selected' : ''}" data-id="${item.id}">
+          ${g.items.map(item => `<div class="hcat-item${item.id === selectedId ? ' selected' : ''}" data-id="${item.id}" title="${item.desc || ''}">
             <span class="hcat-item-icon">${item.icon}</span>
             <span class="hcat-item-name">${item.name}</span>
+            ${item.desc ? '<span class="hcat-help">?</span>' : ''}
           </div>`).join('')}
         </div>
       </div>`;
@@ -338,6 +340,182 @@ const App = {
   },
 
   // ========================================
+  // 給与セクション描画
+  // ========================================
+  renderSalarySection(t) {
+    const sec = qs('#salary-section');
+    if (!sec) return;
+    const entries = t.salaryEntries || [];
+    const insType = t.insuranceType || 'national';
+    const checks = t.insuranceChecks || {};
+    if (entries.length > 0 || insType === 'social') sec.style.display = '';
+    else { sec.style.display = 'none'; return; }
+
+    const list = qs('#salary-list');
+    list.innerHTML = entries.map(e => {
+      const totalSocial = (e.social_health || 0) + (e.social_pension || 0) + (e.social_employment || 0);
+      const net = e.amount - totalSocial;
+      return `<div class="sal-item">
+        <div class="sal-head"><span>${e.employer_name || '給与'}</span><span class="sal-amount">¥${(e.amount || 0).toLocaleString()}</span></div>
+        <div class="sal-meta">${(e.pay_date || '').slice(5)} ${e.social_insurance_applied ? `社保 −¥${totalSocial.toLocaleString()} → 手取 ¥${net.toLocaleString()}` : '社保なし'} ${e.income_recorded ? '✓帳簿済' : ''}</div>
+        <button class="sal-del" data-id="${e.id}">✕</button>
+      </div>`;
+    }).join('') || '<div style="text-align:center;color:var(--text3);padding:8px">給与データなし</div>';
+    list.querySelectorAll('.sal-del').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('削除しますか？')) return;
+        try { await this.api(`/api/salary-entries/${btn.dataset.id}`, { method: 'DELETE' }); this.loadReport(); } catch (err) { this.toast(err.message, 'error'); }
+      });
+    });
+
+    const checkArea = qs('#insurance-check-area');
+    if (checkArea && insType === 'social') {
+      checkArea.style.display = '';
+      checkArea.innerHTML = `<div class="ins-check-title">行政手続きチェック</div>
+        <label class="ins-check-item${checks.social_submitted ? ' done' : ''}"><input type="checkbox" id="chk-social-submitted"${checks.social_submitted ? ' checked' : ''}><span>社会保険加入届を提出済み</span></label>
+        <label class="ins-check-item${checks.national_withdrawn ? ' done' : ''}"><input type="checkbox" id="chk-national-withdrawn"${checks.national_withdrawn ? ' checked' : ''}><span>国保脱退届を提出済み</span></label>
+        ${!checks.national_withdrawn && checks.social_submitted ? '<div class="ins-warning">国保脱退届が未提出です。二重請求の可能性があります。</div>' : ''}`;
+      checkArea.querySelectorAll('input[type=checkbox]').forEach(cb => {
+        cb.addEventListener('change', async () => {
+          try {
+            await this.api('/api/profile', { method: 'PUT', body: JSON.stringify({
+              social_insurance_submitted: qs('#chk-social-submitted')?.checked ? 1 : 0,
+              national_insurance_withdrawn: qs('#chk-national-withdrawn')?.checked ? 1 : 0
+            })});
+          } catch {}
+        });
+      });
+    } else if (checkArea) { checkArea.style.display = 'none'; }
+
+    qs('#btn-add-salary').onclick = () => {
+      const amount = prompt('月額給与（円）');
+      if (!amount) return;
+      const date = prompt('支給日（例: 2026-02-25）', new Date().toISOString().slice(0,10));
+      if (!date) return;
+      const employer = prompt('勤務先名（省略可）', '');
+      const social = confirm('社会保険適用ですか？');
+      this.api('/api/salary-entries', { method: 'POST', body: JSON.stringify({ amount: parseInt(amount), pay_date: date, employer_name: employer, social_insurance_applied: social, auto_record_income: true }) })
+        .then(() => { this.toast('給与を追加しました', 'success'); this.loadReport(); })
+        .catch(err => this.toast(err.message, 'error'));
+    };
+  },
+
+  // ========================================
+  // 借入セクション描画
+  // ========================================
+  renderLoanSection(t) {
+    const sec = qs('#loan-section');
+    if (!sec) return;
+    const loans = t.loans || [];
+    if (loans.length > 0) sec.style.display = '';
+    else { sec.style.display = 'none'; return; }
+
+    const list = qs('#loan-list');
+    list.innerHTML = loans.map(l => {
+      const monthly = l.monthly_payment || 0;
+      const remaining = l.remaining_principal || l.principal;
+      return `<div class="loan-item">
+        <div class="loan-head"><span>${this.esc(l.name)}</span><span class="loan-principal">残 ¥${remaining.toLocaleString()}</span></div>
+        <div class="loan-meta">月¥${monthly.toLocaleString()} / 金利${l.annual_rate}% / 年利息 ¥${(l.yearly_interest || 0).toLocaleString()}</div>
+        <button class="loan-del" data-id="${l.id}">✕</button>
+      </div>`;
+    }).join('');
+    list.querySelectorAll('.loan-del').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('削除しますか？')) return;
+        try { await this.api(`/api/loans/${btn.dataset.id}`, { method: 'DELETE' }); this.loadReport(); } catch (err) { this.toast(err.message, 'error'); }
+      });
+    });
+
+    qs('#btn-add-loan').onclick = () => {
+      const name = prompt('借入名（例: 事業ローン）');
+      if (!name) return;
+      const principal = prompt('借入額（円）');
+      if (!principal) return;
+      const rate = prompt('年利率（%）', '2.0');
+      const term = prompt('返済期間（月数）', '360');
+      const start = prompt('借入日', new Date().toISOString().slice(0,10));
+      this.api('/api/loans', { method: 'POST', body: JSON.stringify({ name, principal: parseInt(principal), annual_rate: parseFloat(rate), term_months: parseInt(term), start_date: start }) })
+        .then(() => { this.toast('借入を追加しました', 'success'); this.loadReport(); })
+        .catch(err => this.toast(err.message, 'error'));
+    };
+  },
+
+  // ========================================
+  // 未来シミュレーション
+  // ========================================
+  _simActual: null,
+  async loadSimulation() {
+    if (!this.currentBook) return;
+    const year = new Date().getFullYear();
+    try {
+      const actual = await this.api(`/api/simulation`, { method: 'POST', body: JSON.stringify({}) });
+      this._simActual = actual;
+      const r = actual.result;
+      const inp = actual.input;
+      this.renderSimCards('sim-actual', [
+        { label: '年間売上', value: inp.income, color: 'income' },
+        { label: '年間支出', value: inp.expense, color: 'expense' },
+        { label: '利益', value: r.profit, color: r.profit >= 0 ? 'income' : 'expense' },
+        { label: '所得税', value: r.incomeTax },
+        { label: '住民税', value: r.residentTax },
+        { label: r.socialInsurance > 0 ? '社会保険' : '国保', value: r.socialInsurance || r.nationalInsurance, color: 'nhi' },
+        { label: '税負担合計', value: r.totalTax, color: 'tax' },
+        { label: '手残り', value: r.handRemaining, color: r.handRemaining >= 0 ? 'primary' : 'expense', large: true },
+      ]);
+      qs('#sim-income').value = inp.income || '';
+      qs('#sim-expense').value = inp.expense || '';
+      qs('#sim-salary').value = inp.salary || '';
+      qs('#sim-insurance-type').value = inp.insurance_type || 'national';
+      qs('#sim-filing-type').value = inp.filing_type || 'white';
+    } catch (err) { this.toast(err.message, 'error'); }
+
+    qs('#btn-run-sim').onclick = async () => {
+      try {
+        const body = {
+          income: parseInt(qs('#sim-income').value) || 0,
+          expense: parseInt(qs('#sim-expense').value) || 0,
+          salary: parseInt(qs('#sim-salary').value) || 0,
+          insurance_type: qs('#sim-insurance-type').value,
+          filing_type: qs('#sim-filing-type').value,
+        };
+        const sim = await this.api('/api/simulation', { method: 'POST', body: JSON.stringify(body) });
+        const r = sim.result;
+        qs('#sim-result-section').style.display = '';
+        this.renderSimCards('sim-result', [
+          { label: '利益', value: r.profit, color: r.profit >= 0 ? 'income' : 'expense' },
+          { label: '所得税', value: r.incomeTax },
+          { label: '住民税', value: r.residentTax },
+          { label: r.socialInsurance > 0 ? '社会保険' : '国保', value: r.socialInsurance || r.nationalInsurance, color: 'nhi' },
+          { label: '税負担合計', value: r.totalTax, color: 'tax' },
+          { label: '手残り', value: r.handRemaining, color: r.handRemaining >= 0 ? 'primary' : 'expense', large: true },
+        ]);
+        if (this._simActual) {
+          const ar = this._simActual.result;
+          qs('#sim-diff-section').style.display = '';
+          const diff = (label, newVal, oldVal) => {
+            const d = newVal - oldVal;
+            return { label, value: d, color: d > 0 ? 'income' : d < 0 ? 'expense' : '', prefix: d > 0 ? '+' : '' };
+          };
+          this.renderSimCards('sim-diff', [
+            diff('税負担', r.totalTax, ar.totalTax),
+            diff('手残り', r.handRemaining, ar.handRemaining),
+            diff('社保/国保', (r.socialInsurance || r.nationalInsurance), (ar.socialInsurance || ar.nationalInsurance)),
+          ]);
+        }
+      } catch (err) { this.toast(err.message, 'error'); }
+    };
+  },
+  renderSimCards(containerId, items) {
+    const wrap = qs(`#${containerId}`);
+    if (!wrap) return;
+    wrap.innerHTML = items.map(item => `<div class="sim-card${item.large ? ' sim-card-lg' : ''}">
+      <div class="sim-card-label">${item.label}</div>
+      <div class="sim-card-val ${item.color || ''}">${item.prefix || ''}¥${(item.value || 0).toLocaleString()}</div>
+    </div>`).join('');
+  },
+
+  // ========================================
   // Google Sign-In
   // ========================================
   async initGoogleSignIn() {
@@ -478,6 +656,7 @@ const App = {
 
     if (view === 'home') this.loadDashboard();
     if (view === 'report') this.loadReport();
+    if (view === 'simulation') this.loadSimulation();
     if (view === 'settings') { this.renderBookList(); this.loadOverview(); }
   },
 
@@ -809,7 +988,8 @@ const App = {
     if (!desc) return 'general';
     const d = desc.toLowerCase();
     const map = {
-      medical: ['病院','医院','クリニック','歯科','薬局','薬店','ドラッグ','調剤','診療','処方','眼科','皮膚科','内科','外科','整骨','接骨','治療','健診','人間ドック','医療'],
+      medical: ['病院','医院','クリニック','歯科','薬局','薬店','ドラッグ','調剤','診療','処方','眼科','皮膚科','内科','外科','整骨','接骨','治療','健診','人間ドック','医療','手術'],
+      medical_high: ['高額療養','高額医療','限度額'],
       insurance: ['国民年金','国保','社会保険','国民健康保険','健康保険','年金','共済'],
       life_insurance: ['生命保険','損害保険','がん保険','養老保険','介護保険','学資保険','個人年金保険'],
       earthquake_insurance: ['地震保険','火災保険'],
@@ -926,14 +1106,7 @@ const App = {
     }
     sel.addEventListener('change', () => this.loadReport());
 
-    qs('#btn-toggle-analytics').addEventListener('click', () => {
-      const sec = qs('#analytics-section');
-      const isHidden = sec.style.display === 'none';
-      sec.style.display = isHidden ? '' : 'none';
-      const btn = qs('#btn-toggle-analytics');
-      if (isHidden) { btn.style.background = 'var(--pri-bg)'; btn.style.color = 'var(--pri)'; btn.style.borderColor = 'var(--pri)'; }
-      else { btn.style.background = ''; btn.style.color = ''; btn.style.borderColor = ''; }
-    });
+    // 分析は折りたたみに移行（setupFoldTogglesで処理）
 
     qs('#btn-ai-gen').addEventListener('click', async () => {
       try {
@@ -1238,43 +1411,27 @@ const App = {
       bdHtml += `<div class="tax-bd-row total"><span>年間税負担合計</span><span class="tax-bd-val">¥${(t.totalAllTaxes || tax.totalTax || 0).toLocaleString()}</span></div>`;
       qs('#tax-breakdown').innerHTML = bdHtml;
 
-      // 支出の節税効果
-      if (t.expenseTaxImpact && t.expenseTaxImpact.length > 0) {
-        qs('#expense-impact-card').style.display = '';
-        qs('#expense-impact-desc').textContent = `実効税率 約${t.expenseTaxImpact[0].effectiveRate}%。支出1万円で約¥${Math.floor(t.expenseTaxImpact[0].effectiveRate * 100)}の節税。`;
-        qs('#expense-impact').innerHTML = t.expenseTaxImpact.map(e => `
-          <div class="ei-item">
-            <span class="ei-icon">${this.categoryIcon(e.category)}</span>
-            <div class="ei-body">
-              <div class="ei-name">${this.categoryName(e.category)}</div>
-              <div class="ei-detail">¥${e.total.toLocaleString()} (${e.count}件)</div>
-            </div>
-            <div class="ei-saving">
-              <div class="ei-saving-val">-¥${e.taxSaving.toLocaleString()}</div>
-              <div class="ei-saving-rate">節税額</div>
-            </div>
-          </div>
-        `).join('');
-      } else {
-        qs('#expense-impact-card').style.display = 'none';
-      }
-
-      // 節税アドバイス（グループ×段階）
-      this.renderAdviceGroups(t.adviceGroups || []);
-
-      // 消費税壁アラート
-      this.renderConsumptionTaxAlert(t.consumptionTaxAlert);
-
       // 欠損金（赤字）繰越
       this.renderCarryoverLoss(t.carryoverLoss);
 
-      // 税務健全性スコア
-      this.renderHealthScore(t.healthScore);
-
       // 控除一覧
-      this.renderDeductions(t.deductions || [], y);
+      const deds = t.deductions || [];
+      this.renderDeductions(deds, y);
+      const dedCount = qs('#deduction-count');
+      if (dedCount) dedCount.textContent = deds.length ? `(${deds.length})` : '';
+
       // 減価償却一覧
-      this.renderDepreciations(t.depreciationDetails || [], y);
+      const deps = t.depreciationDetails || [];
+      this.renderDepreciations(deps, y);
+      const depCount = qs('#depreciation-count');
+      if (depCount) depCount.textContent = deps.length ? `(${deps.length})` : '';
+
+      // 給与・社保サマリー
+      this.renderSalarySection(t);
+
+      // 借入サマリー
+      this.renderLoanSection(t);
+
     } catch (err) { this.toast(err.message, 'error'); }
   },
 

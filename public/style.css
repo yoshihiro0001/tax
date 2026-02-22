@@ -1570,5 +1570,87 @@ body { min-height: 100dvh; }
 .pf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 @media (max-width: 480px) { .pf-grid { grid-template-columns: 1fr; } }
 
+/* ============================================
+   撮影エリア改善
+   ============================================ */
+.capture-area {
+  display: flex; align-items: center; justify-content: center;
+  gap: 20px; padding: 16px 0;
+}
+.gallery-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 48px; height: 48px; border-radius: 14px;
+  background: var(--bg); border: 1.5px solid var(--border);
+  color: var(--text2); cursor: pointer; transition: all .2s;
+  flex-shrink: 0;
+}
+.gallery-btn:active { transform: scale(.92); background: var(--pri-bg); }
+
+/* ============================================
+   給与・社保
+   ============================================ */
+.sal-item { position: relative; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.sal-item:last-child { border-bottom: none; }
+.sal-head { display: flex; justify-content: space-between; font-weight: 600; font-size: 14px; }
+.sal-amount { color: var(--primary); }
+.sal-meta { font-size: 12px; color: var(--text3); margin-top: 2px; }
+.sal-del { position: absolute; right: 0; top: 10px; background: none; border: none; color: var(--text3); cursor: pointer; font-size: 14px; }
+
+.insurance-check-area { margin-top: 12px; padding: 12px; background: var(--pri-bg); border-radius: var(--radius-xs); }
+.ins-check-title { font-weight: 600; font-size: 13px; color: var(--text); margin-bottom: 8px; }
+.ins-check-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 13px; color: var(--text); cursor: pointer; }
+.ins-check-item.done { color: #22c55e; }
+.ins-check-item input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--primary); }
+.ins-warning { margin-top: 8px; padding: 8px 10px; background: #fef2f2; border-radius: var(--radius-xs); font-size: 12px; color: #dc2626; font-weight: 500; border-left: 3px solid #ef4444; }
+
+/* ============================================
+   借入
+   ============================================ */
+.loan-item { position: relative; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.loan-item:last-child { border-bottom: none; }
+.loan-head { display: flex; justify-content: space-between; font-weight: 600; font-size: 14px; }
+.loan-principal { color: var(--text); }
+.loan-meta { font-size: 12px; color: var(--text3); margin-top: 2px; }
+.loan-del { position: absolute; right: 0; top: 10px; background: none; border: none; color: var(--text3); cursor: pointer; font-size: 14px; }
+
+/* ============================================
+   シミュレーション
+   ============================================ */
+.sim-section { margin-bottom: 20px; }
+.sim-section-label {
+  font-weight: 700; font-size: 14px; color: var(--text);
+  margin-bottom: 10px; padding: 0 4px;
+}
+.sim-cards {
+  display: grid; grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+.sim-card {
+  background: var(--card-bg); border-radius: var(--radius);
+  padding: 14px 16px; box-shadow: var(--shadow);
+}
+.sim-card-lg { grid-column: 1 / -1; text-align: center; }
+.sim-card-label { font-size: 11px; color: var(--text3); margin-bottom: 4px; }
+.sim-card-val { font-weight: 700; font-size: 18px; color: var(--text); }
+.sim-card-val.income { color: #22c55e; }
+.sim-card-val.expense { color: #ef4444; }
+.sim-card-val.tax { color: #f59e0b; }
+.sim-card-val.nhi { color: #f97316; }
+.sim-card-val.primary { color: var(--primary); }
+.sim-card-lg .sim-card-val { font-size: 28px; }
+.sim-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+@media (max-width: 480px) { .sim-inputs { grid-template-columns: 1fr; } }
+
+/* ============================================
+   カテゴリヘルプアイコン
+   ============================================ */
+.hcat-help {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--border); color: var(--text3);
+  font-size: 10px; font-weight: 700; flex-shrink: 0;
+  cursor: help; margin-left: 2px;
+}
+
 /* Print */
 @media print { .topbar, .bottom-nav, .overlay { display: none !important; } }
