@@ -167,6 +167,40 @@ db.exec(`
   );
 `);
 
+// === プロフィール（オンボーディング＆申告書用） ===
+db.exec(`
+  CREATE TABLE IF NOT EXISTS user_profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER UNIQUE NOT NULL,
+    full_name TEXT,
+    full_name_kana TEXT,
+    birth_date TEXT,
+    address TEXT,
+    phone TEXT,
+    my_number TEXT,
+    occupation TEXT,
+    filing_type TEXT DEFAULT 'white',
+    blue_return_type TEXT DEFAULT '10',
+    household_head TEXT,
+    spouse_status TEXT DEFAULT 'none',
+    spouse_income INTEGER DEFAULT 0,
+    dependents_general INTEGER DEFAULT 0,
+    dependents_specific INTEGER DEFAULT 0,
+    dependents_elderly INTEGER DEFAULT 0,
+    dependents_other INTEGER DEFAULT 0,
+    is_disability TEXT DEFAULT 'none',
+    is_student INTEGER DEFAULT 0,
+    is_single_parent INTEGER DEFAULT 0,
+    is_widow INTEGER DEFAULT 0,
+    municipality TEXT,
+    over40 INTEGER DEFAULT 0,
+    onboarding_done INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    updated_at TEXT DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+`);
+
 // === 運用管理テーブル ===
 db.exec(`
   CREATE TABLE IF NOT EXISTS error_logs (
@@ -245,16 +279,32 @@ const TAX_ATTRIBUTES = {
   tax_deductible:     { individual: { deductible: true, ctax: 'exempt' }, corporate: { deductible: true, ctax: 'exempt' } },
   tax_non_deductible: { individual: { deductible: false, nonDeductible: true }, corporate: { deductible: false, nonDeductible: true } },
   asset:              { individual: { deductible: false, isAsset: true, depThreshold: 100000 }, corporate: { deductible: false, isAsset: true, depThreshold: 100000 } },
+  life_insurance:     { individual: { deductible: false, deductionType: 'life_insurance', ctax: 'exempt' }, corporate: { deductible: true, ctax: 'exempt' } },
+  earthquake_insurance:{ individual: { deductible: false, deductionType: 'earthquake_insurance', ctax: 'exempt' }, corporate: { deductible: true, ctax: 'exempt' } },
+  donation:           { individual: { deductible: false, deductionType: 'donation', ctax: 'exempt' }, corporate: { deductible: true, ctax: 'exempt' } },
 };
 
 const INCOME_TAX_ATTR = {
-  business:    { ctax: 'taxable', method: 'comprehensive' },
-  salary:      { ctax: 'exempt', method: 'comprehensive', salaryDeduction: true },
-  fx_stock:    { ctax: 'exempt', method: 'separate', rate: 0.20315 },
-  real_estate: { ctax: 'taxable', method: 'comprehensive' },
-  subsidy:     { ctax: 'exempt', method: 'comprehensive' },
-  refund:      { ctax: 'exempt', method: 'comprehensive' },
-  misc:        { ctax: 'exempt', method: 'comprehensive' },
+  business:        { ctax: 'taxable', method: 'comprehensive', formField: '営業等' },
+  agriculture:     { ctax: 'taxable', method: 'comprehensive', formField: '農業' },
+  salary:          { ctax: 'exempt', method: 'comprehensive', salaryDeduction: true, formField: '給与' },
+  real_estate:     { ctax: 'taxable', method: 'comprehensive', formField: '不動産' },
+  interest:        { ctax: 'exempt', method: 'separate', rate: 0.20315, formField: '利子' },
+  dividend:        { ctax: 'exempt', method: 'comprehensive', dividendCredit: true, formField: '配当' },
+  stock_transfer:  { ctax: 'exempt', method: 'separate', rate: 0.20315, formField: '株式等譲渡' },
+  fx_stock:        { ctax: 'exempt', method: 'separate', rate: 0.20315, formField: '株式等譲渡' },
+  fx_futures:      { ctax: 'exempt', method: 'separate', rate: 0.20315, formField: 'FX・先物' },
+  pension:         { ctax: 'exempt', method: 'comprehensive', pensionDeduction: true, formField: '公的年金等' },
+  misc_business:   { ctax: 'exempt', method: 'comprehensive', formField: '雑（業務）' },
+  misc_other:      { ctax: 'exempt', method: 'comprehensive', formField: '雑（その他）' },
+  misc:            { ctax: 'exempt', method: 'comprehensive', formField: '雑（その他）' },
+  capital_short:   { ctax: 'exempt', method: 'comprehensive', formField: '総合短期譲渡' },
+  capital_long:    { ctax: 'exempt', method: 'comprehensive', halfDeduction: true, formField: '総合長期譲渡' },
+  temporary:       { ctax: 'exempt', method: 'comprehensive', specialDeduction: 500000, halfIncome: true, formField: '一時' },
+  forest:          { ctax: 'exempt', method: 'separate_forest', formField: '山林' },
+  retirement:      { ctax: 'exempt', method: 'separate_retirement', formField: '退職' },
+  subsidy:         { ctax: 'exempt', method: 'comprehensive', formField: '雑' },
+  refund:          { ctax: 'exempt', method: 'comprehensive', formField: '雑' },
 };
 
 // === インデックス ===
@@ -341,6 +391,9 @@ const categoryKeywords = {
   tax_deductible: ['消費税','印紙税','事業税','固定資産税','自動車税','登録免許税','不動産取得税','印紙','収入印紙','軽自動車税','都市計画税'],
   tax_non_deductible: ['所得税','住民税','法人税','予定納税','源泉所得税','延滞税','加算税','確定申告'],
   general: ['交通','電車','JR','Suica','PASMO','タクシー','バス','新幹線','航空','高速','ETC','ガソリン','駐車','通信','電話','携帯','WiFi','AWS','サーバー','ドメイン','Amazon','アマゾン','ヨドバシ','ビックカメラ','文具','事務','コピー','消耗品','広告','宣伝','チラシ','印刷','PR','手数料','PayPal','Stripe','決済','銀行','ATM','年会費','コンビニ','セブン','ファミリーマート','ローソン','振込'],
+  life_insurance: ['生命保険','個人年金保険','養老保険','医療保険','がん保険','介護保険','学資保険'],
+  earthquake_insurance: ['地震保険','火災保険','家財保険'],
+  donation: ['寄附','寄付','ふるさと納税','赤十字','ユニセフ','認定NPO'],
 };
 
 // 非経費カテゴリ（支出合計に含めない）
@@ -515,7 +568,50 @@ router.get('/api/auth/me', auth, (req, res) => {
   const ownBooks = db.prepare("SELECT *, 'owner' as memberRole FROM books WHERE user_id = ? ORDER BY created_at").all(req.userId);
   const sharedBooks = db.prepare("SELECT b.id, b.name, b.emoji, b.created_at, bm.role as memberRole, bm.can_view_income, bm.can_view_all_expenses, bm.can_input_expense, bm.can_input_income FROM book_members bm JOIN books b ON bm.book_id = b.id WHERE bm.user_id = ? ORDER BY b.created_at").all(req.userId);
   const books = [...ownBooks, ...sharedBooks];
-  res.json({ user, books });
+  const profile = db.prepare('SELECT * FROM user_profiles WHERE user_id = ?').get(req.userId);
+  res.json({ user, books, profile: profile || null });
+});
+
+// ========================================
+// プロフィール API
+// ========================================
+
+router.get('/api/profile', auth, (req, res) => {
+  try {
+    const profile = db.prepare('SELECT * FROM user_profiles WHERE user_id = ?').get(req.userId);
+    res.json({ profile: profile || null });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.put('/api/profile', auth, (req, res) => {
+  try {
+    const fields = ['full_name','full_name_kana','birth_date','address','phone','my_number',
+      'occupation','filing_type','blue_return_type','household_head',
+      'spouse_status','spouse_income','dependents_general','dependents_specific',
+      'dependents_elderly','dependents_other','is_disability','is_student',
+      'is_single_parent','is_widow','municipality','over40','onboarding_done'];
+    const existing = db.prepare('SELECT id FROM user_profiles WHERE user_id = ?').get(req.userId);
+    if (existing) {
+      const updates = []; const params = [];
+      for (const f of fields) {
+        if (req.body[f] !== undefined) { updates.push(`${f}=?`); params.push(req.body[f]); }
+      }
+      if (updates.length > 0) {
+        updates.push("updated_at=datetime('now','localtime')");
+        params.push(existing.id);
+        db.prepare(`UPDATE user_profiles SET ${updates.join(',')} WHERE id=?`).run(...params);
+      }
+    } else {
+      const cols = ['user_id']; const vals = [req.userId]; const ph = ['?'];
+      for (const f of fields) {
+        if (req.body[f] !== undefined) { cols.push(f); vals.push(req.body[f]); ph.push('?'); }
+      }
+      db.prepare(`INSERT INTO user_profiles (${cols.join(',')}) VALUES (${ph.join(',')})`).run(...vals);
+    }
+    const profile = db.prepare('SELECT * FROM user_profiles WHERE user_id = ?').get(req.userId);
+    logActivity(req.userId, 'update_profile', 'プロフィール更新');
+    res.json({ success: true, profile });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ========================================
@@ -1332,16 +1428,24 @@ function calcDepreciationRemaining(dep) {
 
 // 所得区分別ラベル
 const INCOME_TYPE_LABELS = {
-  business: '売上', salary: '給与所得', fx_stock: '株・FX（分離課税）',
-  real_estate: '不動産所得', subsidy: '助成金・補助金', refund: '還付金', misc: 'その他の所得'
+  business: '事業所得（営業等）', agriculture: '事業所得（農業）',
+  salary: '給与所得', real_estate: '不動産所得',
+  interest: '利子所得', dividend: '配当所得',
+  stock_transfer: '株式等譲渡所得', fx_stock: '株・FX（分離課税）', fx_futures: 'FX・先物',
+  pension: '公的年金等', misc_business: '雑所得（業務）', misc_other: '雑所得（その他）', misc: 'その他',
+  capital_short: '総合短期譲渡', capital_long: '総合長期譲渡',
+  temporary: '一時所得', forest: '山林所得', retirement: '退職所得',
+  subsidy: '助成金・補助金', refund: '還付金',
 };
 
 // 控除タイプ別ラベル
 const DEDUCTION_LABELS = {
   blue_return: '青色申告特別控除', basic: '基礎控除', medical: '医療費控除',
-  social_insurance: '社会保険料控除', spouse: '配偶者控除', dependent: '扶養控除',
-  life_insurance: '生命保険料控除', earthquake: '地震保険料控除',
-  small_business: '小規模企業共済等掛金控除', hometown_tax: 'ふるさと納税', other: 'その他控除'
+  social_insurance: '社会保険料控除', spouse: '配偶者控除', spouse_special: '配偶者特別控除',
+  dependent: '扶養控除', life_insurance: '生命保険料控除', earthquake: '地震保険料控除',
+  small_business: '小規模企業共済等掛金控除', hometown_tax: 'ふるさと納税（寄附金控除）',
+  disability: '障害者控除', widow: '寡婦控除', single_parent: 'ひとり親控除',
+  working_student: '勤労学生控除', casualty: '雑損控除', other: 'その他控除'
 };
 
 // 税額シミュレーション
@@ -1355,7 +1459,8 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
     const incomeByType = db.prepare("SELECT COALESCE(income_type,'business') as income_type, SUM(amount) as total FROM income WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=? GROUP BY COALESCE(income_type,'business')").all(book.id, year);
     const totalIncome = incomeByType.reduce((s, r) => s + r.total, 0);
     const businessIncome = incomeByType.find(r => r.income_type === 'business')?.total || 0;
-    const separateIncome = incomeByType.find(r => r.income_type === 'fx_stock')?.total || 0;
+    const separateTypes = ['fx_stock','stock_transfer','fx_futures','interest','retirement'];
+    const separateIncome = incomeByType.filter(r => separateTypes.includes(r.income_type)).reduce((s, r) => s + r.total, 0);
 
     // 課税売上・非課税売上の分類（消費税計算用）
     const taxableRevenue = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM income WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=? AND COALESCE(taxable,1)=1").get(book.id, year).t;
@@ -1399,23 +1504,50 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
     // 経費カテゴリから自動検出される控除（承認済みのみ）
     const medicalExpenses = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=? AND category='medical'").get(book.id, year).t;
     const insuranceExpenses = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=? AND category='insurance'").get(book.id, year).t;
+    const lifeInsExpenses = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=? AND category='life_insurance'").get(book.id, year).t;
+    const eqInsExpenses = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=? AND category='earthquake_insurance'").get(book.id, year).t;
+    const donationExpenses = db.prepare("SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE book_id=? AND (status='approved' OR status IS NULL) AND strftime('%Y',date)=? AND category='donation'").get(book.id, year).t;
+
+    // プロフィール取得（控除自動適用用）
+    const profile = db.prepare('SELECT * FROM user_profiles WHERE user_id = ?').get(req.userId) || {};
 
     // 控除
     const deductions = db.prepare('SELECT * FROM deductions WHERE book_id=? AND year=?').all(book.id, year);
     let totalDeductions = 0;
-    const hasBasic = deductions.some(d => d.type === 'basic');
-    const hasMedical = deductions.some(d => d.type === 'medical');
-    const hasInsurance = deductions.some(d => d.type === 'social_insurance');
+    const hasType = (t) => deductions.some(d => d.type === t);
     const deductionList = [];
-    if (!hasBasic) deductionList.push({ type: 'basic', name: '基礎控除', amount: 480000, auto: true });
-    // 医療費控除: 10万円 or 所得の5%の低い方を超えた分（自動計算）
+    if (!hasType('basic')) deductionList.push({ type: 'basic', name: '基礎控除', amount: 480000, auto: true });
     const medThreshold = medicalDeductionThreshold(totalIncome - totalExpenses);
-    if (!hasMedical && medicalExpenses > medThreshold) {
+    if (!hasType('medical') && medicalExpenses > medThreshold) {
       deductionList.push({ type: 'medical', name: '医療費控除（自動）', amount: Math.min(medicalExpenses - medThreshold, 2000000), auto: true });
     }
-    // 社会保険料控除: 保険カテゴリの経費全額が控除（自動計算）
-    if (!hasInsurance && insuranceExpenses > 0) {
-      deductionList.push({ type: 'social_insurance', name: '社会保険料控除（自動計算）', amount: insuranceExpenses, auto: true });
+    if (!hasType('social_insurance') && insuranceExpenses > 0) {
+      deductionList.push({ type: 'social_insurance', name: '社会保険料控除（自動）', amount: insuranceExpenses, auto: true });
+    }
+    if (!hasType('life_insurance') && lifeInsExpenses > 0) {
+      const lifeDeduction = Math.min(lifeInsExpenses <= 20000 ? lifeInsExpenses : lifeInsExpenses <= 40000 ? lifeInsExpenses / 2 + 10000 : lifeInsExpenses <= 80000 ? lifeInsExpenses / 4 + 20000 : 40000, 120000);
+      deductionList.push({ type: 'life_insurance', name: '生命保険料控除（自動）', amount: Math.floor(lifeDeduction), auto: true });
+    }
+    if (!hasType('earthquake') && eqInsExpenses > 0) {
+      deductionList.push({ type: 'earthquake', name: '地震保険料控除（自動）', amount: Math.min(eqInsExpenses, 50000), auto: true });
+    }
+    if (!hasType('hometown_tax') && donationExpenses > 0) {
+      const donationDeduction = Math.max(0, donationExpenses - 2000);
+      if (donationDeduction > 0) deductionList.push({ type: 'hometown_tax', name: '寄附金控除（自動）', amount: donationDeduction, auto: true });
+    }
+    // プロフィールから自動適用する人的控除
+    if (profile.spouse_status === 'dependent' && !hasType('spouse')) {
+      deductionList.push({ type: 'spouse', name: '配偶者控除（自動）', amount: 380000, auto: true });
+    }
+    if ((profile.dependents_general || 0) > 0 && !hasType('dependent')) {
+      deductionList.push({ type: 'dependent', name: '扶養控除（自動）', amount: (profile.dependents_general || 0) * 380000 + (profile.dependents_specific || 0) * 630000 + (profile.dependents_elderly || 0) * 480000, auto: true });
+    }
+    if (profile.is_single_parent && !hasType('single_parent')) {
+      deductionList.push({ type: 'single_parent', name: 'ひとり親控除（自動）', amount: 350000, auto: true });
+    }
+    if (profile.filing_type === 'blue' && !hasType('blue_return')) {
+      const blAmt = profile.blue_return_type === '65' ? 650000 : profile.blue_return_type === '55' ? 550000 : 100000;
+      deductionList.push({ type: 'blue_return', name: '青色申告特別控除（自動）', amount: blAmt, auto: true });
     }
     deductions.forEach(d => { deductionList.push({ ...d, auto: false }); });
     totalDeductions = deductionList.reduce((s, d) => s + d.amount, 0);
@@ -1430,6 +1562,12 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
     const reconstructionTax = Math.floor(incomeTax * 0.021);
     const residentTax = calcResidentTax(taxableIncome);
     const separateTax = separateIncome > 0 ? Math.floor(separateIncome * 0.20315) : 0;
+    // 一時所得の特別処理: (収入-50万)×1/2 を総合課税に加算
+    const tempIncome = incomeByType.find(r => r.income_type === 'temporary')?.total || 0;
+    const tempTaxable = tempIncome > 0 ? Math.max(0, Math.floor((tempIncome - 500000) / 2)) : 0;
+    // 長期譲渡の特別処理: 1/2を総合課税に加算
+    const longCapIncome = incomeByType.find(r => r.income_type === 'capital_long')?.total || 0;
+    const longCapTaxable = longCapIncome > 0 ? Math.floor(longCapIncome / 2) : 0;
     const totalTax = incomeTax + reconstructionTax + residentTax + separateTax;
 
     // 現在の税率帯
@@ -1439,11 +1577,13 @@ router.get('/api/tax-simulation/:year', auth, (req, res) => {
     // 収入区分別の税額内訳（カテゴリ別把握）
     const taxByIncomeType = incomeByType.map(r => {
       const label = INCOME_TYPE_LABELS[r.income_type] || r.income_type;
-      if (r.income_type === 'fx_stock') {
-        const tax = Math.floor(r.total * 0.20315);
-        return { income_type: r.income_type, label, amount: r.total, taxRate: 20.315, taxRateLabel: '20.315%（所得税15.315% + 住民税5%）', taxAmount: tax, method: '申告分離課税' };
+      const attr = INCOME_TAX_ATTR[r.income_type] || {};
+      if (separateTypes.includes(r.income_type)) {
+        const rate = attr.rate || 0.20315;
+        const tax = Math.floor(r.total * rate);
+        return { income_type: r.income_type, label, amount: r.total, taxRate: rate * 100, taxRateLabel: `${(rate * 100).toFixed(3)}%`, taxAmount: tax, method: '申告分離課税', formField: attr.formField };
       } else {
-        return { income_type: r.income_type, label, amount: r.total, taxRate: null, taxRateLabel: '総合課税（累進税率）', taxAmount: null, method: '総合課税' };
+        return { income_type: r.income_type, label, amount: r.total, taxRate: null, taxRateLabel: '総合課税（累進税率）', taxAmount: null, method: '総合課税', formField: attr.formField };
       }
     });
 
@@ -1900,7 +2040,8 @@ router.get('/api/export-receipts', auth, (req, res) => {
 
     const CATEGORY_NAMES = {
       cogs:'仕入・原価', labor:'外注・人件費', rent:'家賃・光熱費', general:'一般経費',
-      entertainment:'接待交際費', insurance:'保険・年金', welfare:'福利厚生費', medical:'医療費',
+      entertainment:'接待交際費', insurance:'社会保険・年金', welfare:'福利厚生費', medical:'医療費',
+      life_insurance:'生命保険', earthquake_insurance:'地震保険', donation:'寄附金',
       tax_deductible:'租税公課', tax_non_deductible:'税金(非経費)', asset:'固定資産'
     };
 

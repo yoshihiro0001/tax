@@ -1489,5 +1489,86 @@ body { min-height: 100dvh; }
 .hs-issue-label { font-weight: 600; font-size: 13px; color: var(--text); margin-bottom: 2px; }
 .hs-issue-detail { font-size: 11px; color: var(--text2); line-height: 1.4; }
 
+/* ============================================
+   折りたたみカード
+   ============================================ */
+.card-fold-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 4px 0; cursor: pointer; user-select: none;
+  font-weight: 600; font-size: 14px; color: var(--text);
+}
+.card-fold-head:active { opacity: .7; }
+.fold-toggle {
+  font-size: 18px; color: var(--text3);
+  transition: transform .2s;
+  display: inline-block; width: 20px; text-align: center;
+}
+.fold-count { font-size: 12px; font-weight: 500; color: var(--text3); }
+.card-fold-body { padding-top: 10px; }
+
+/* ============================================
+   階層カテゴリ
+   ============================================ */
+.hcat-selector { max-height: 280px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.hcat-group { margin-bottom: 6px; }
+.hcat-group-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border-radius: var(--radius-xs);
+  background: var(--pri-bg); cursor: pointer; user-select: none;
+  font-weight: 600; font-size: 13px; color: var(--primary);
+}
+.hcat-group-head:active { opacity: .7; }
+.hcat-group-icon { font-size: 16px; }
+.hcat-group-label { flex: 1; }
+.hcat-group-arrow { font-size: 12px; color: var(--text3); }
+.hcat-items { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 4px; }
+.hcat-item {
+  display: flex; align-items: center; gap: 5px;
+  padding: 6px 12px; border-radius: 20px;
+  background: var(--bg); border: 1.5px solid var(--border);
+  font-size: 13px; color: var(--text);
+  cursor: pointer; user-select: none; transition: all .15s;
+}
+.hcat-item:active { transform: scale(.96); }
+.hcat-item.selected { border-color: var(--primary); background: var(--pri-bg); color: var(--primary); font-weight: 600; }
+.hcat-item-icon { font-size: 14px; }
+.hcat-item-name { white-space: nowrap; }
+.hcat-collapsed .hcat-group-head { background: var(--bg); color: var(--text2); }
+
+/* ============================================
+   オンボーディング
+   ============================================ */
+.onboarding-sheet { max-width: 400px; }
+.ob-progress { height: 3px; background: var(--border); border-radius: 2px; margin-bottom: 24px; overflow: hidden; }
+.ob-progress-fill { height: 100%; background: var(--primary); border-radius: 2px; transition: width .3s; }
+.ob-title { font-size: 20px; font-weight: 700; color: var(--text); margin-bottom: 16px; text-align: center; }
+.ob-input { font-size: 16px !important; padding: 14px 16px !important; text-align: center; }
+.ob-options { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.ob-option {
+  padding: 12px 24px; border-radius: 12px;
+  border: 2px solid var(--border); background: var(--bg);
+  font-size: 15px; font-weight: 600; color: var(--text);
+  cursor: pointer; transition: all .15s;
+}
+.ob-option.selected { border-color: var(--primary); background: var(--pri-bg); color: var(--primary); }
+.ob-option:active { transform: scale(.96); }
+.ob-chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.ob-chip {
+  padding: 10px 18px; border-radius: 24px;
+  border: 2px solid var(--border); background: var(--bg);
+  font-size: 14px; color: var(--text);
+  cursor: pointer; transition: all .15s;
+}
+.ob-chip.selected { border-color: var(--primary); background: var(--pri-bg); color: var(--primary); font-weight: 600; }
+.ob-chip:active { transform: scale(.96); }
+.ob-actions { display: flex; gap: 10px; justify-content: center; margin-top: 24px; }
+.ob-actions .btn-outline { color: var(--text3); border-color: transparent; }
+
+/* ============================================
+   プロフィールフォーム
+   ============================================ */
+.pf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+@media (max-width: 480px) { .pf-grid { grid-template-columns: 1fr; } }
+
 /* Print */
 @media print { .topbar, .bottom-nav, .overlay { display: none !important; } }

@@ -13,7 +13,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <link rel="stylesheet" href="style.css?v=20260219b">
+  <link rel="stylesheet" href="style.css?v=20260222">
 </head>
 <body>
   <div id="toast-container"></div>
@@ -129,23 +129,33 @@
           <select id="report-year" class="sel-year"></select>
         </div>
 
-        <!-- 真の自由資金ヒーロー -->
+        <!-- 手残りヒーロー -->
         <div class="free-cash-hero" id="free-cash-hero">
-          <div class="fch-label">自由に使えるお金</div>
+          <div class="fch-label">手残り</div>
           <div class="fch-val" id="free-cash-val">¥0</div>
           <div class="fch-sub" id="free-cash-sub"></div>
         </div>
 
-        <!-- 税負担サマリー -->
+        <!-- 税負担 -->
         <div class="tax-hero" id="tax-hero">
           <div class="tax-hero-label">年間税負担</div>
           <div class="tax-hero-val" id="tax-total">¥0</div>
           <div class="tax-hero-sub" id="tax-hero-sub"></div>
         </div>
 
-        <!-- 税負担の内訳 -->
+        <!-- 税負担の内訳バー -->
         <div class="card card-tax-summary">
           <div id="tax-summary-bars"></div>
+        </div>
+
+        <!-- 直近の支払い（3件のみ、展開可能） -->
+        <div class="card card-schedule">
+          <div class="card-schedule-head">
+            <h3 class="card-title">直近の支払い</h3>
+            <button class="link-btn" id="btn-show-all-schedule" style="display:none">すべて見る</button>
+          </div>
+          <div id="payment-schedule" class="payment-timeline"></div>
+          <div id="payment-schedule-all" class="payment-timeline" style="display:none"></div>
         </div>
 
         <!-- 赤字の貯金箱 -->
@@ -156,56 +166,51 @@
         <!-- 消費税アラート -->
         <div class="card cta-card" id="cta-card" style="display:none"></div>
 
-        <!-- 節税提案 -->
-        <div id="tax-tips-card" style="display:none">
-          <div id="tax-tips"></div>
-        </div>
-
-        <!-- 支払カレンダー -->
-        <div class="card card-schedule">
-          <div class="card-schedule-head">
-            <h3 class="card-title">支払カレンダー</h3>
-            <span class="schedule-total" id="schedule-total"></span>
-          </div>
-          <div id="payment-schedule" class="payment-timeline"></div>
-        </div>
-
-        <!-- 収支フロー（シンプル） -->
+        <!-- 収支フロー（折りたたみ） -->
         <div class="card card-flow">
-          <div class="tax-flow">
-            <div class="tf-row tf-tappable" id="tf-income-row"><span>収入</span><span class="tf-val income" id="rpt-income">¥0</span><span class="tf-arrow">›</span></div>
-            <div class="tf-op">−</div>
-            <div class="tf-row tf-tappable" id="tf-expense-row"><span>支出</span><span class="tf-val expense" id="rpt-expense">¥0</span><span class="tf-arrow">›</span></div>
-            <div class="tf-row tf-tax-profit" id="tf-tax-profit-row" style="display:none"><span>利益課税</span><span class="tf-val tax-profit">¥0</span></div>
-            <div class="tf-op">−</div>
-            <div class="tf-row"><span>減価償却</span><span class="tf-val" id="rpt-depreciation">¥0</span></div>
-            <div class="tf-op">−</div>
-            <div class="tf-row"><span>控除</span><span class="tf-val" id="rpt-deductions">¥0</span></div>
-            <div class="tf-eq thick"></div>
-            <div class="tf-row bold"><span>課税所得</span><span class="tf-val primary" id="rpt-taxable">¥0</span></div>
+          <div class="card-fold-head" id="fold-flow-head">
+            <span>収支フロー</span>
+            <span class="fold-toggle">›</span>
+          </div>
+          <div class="card-fold-body" id="fold-flow-body" style="display:none">
+            <div class="tax-flow">
+              <div class="tf-row tf-tappable" id="tf-income-row"><span>収入</span><span class="tf-val income" id="rpt-income">¥0</span><span class="tf-arrow">›</span></div>
+              <div class="tf-op">−</div>
+              <div class="tf-row tf-tappable" id="tf-expense-row"><span>支出</span><span class="tf-val expense" id="rpt-expense">¥0</span><span class="tf-arrow">›</span></div>
+              <div class="tf-row tf-tax-profit" id="tf-tax-profit-row" style="display:none"><span>利益課税</span><span class="tf-val tax-profit">¥0</span></div>
+              <div class="tf-op">−</div>
+              <div class="tf-row"><span>減価償却</span><span class="tf-val" id="rpt-depreciation">¥0</span></div>
+              <div class="tf-op">−</div>
+              <div class="tf-row"><span>控除</span><span class="tf-val" id="rpt-deductions">¥0</span></div>
+              <div class="tf-eq thick"></div>
+              <div class="tf-row bold"><span>課税所得</span><span class="tf-val primary" id="rpt-taxable">¥0</span></div>
+            </div>
           </div>
         </div>
 
-        <!-- 税額の内訳 -->
+        <!-- 税額の内訳（折りたたみ） -->
         <div class="card">
-          <div id="tax-breakdown"></div>
+          <div class="card-fold-head" id="fold-tax-head">
+            <span>税額の内訳</span>
+            <span class="fold-toggle">›</span>
+          </div>
+          <div class="card-fold-body" id="fold-tax-body" style="display:none">
+            <div id="tax-breakdown"></div>
+          </div>
         </div>
 
         <!-- 欠損金繰越 -->
         <div class="card carryover-card" id="carryover-card" style="display:none"></div>
 
-        <!-- 税務健全性スコア -->
-        <div class="card health-score-card" id="health-score-card" style="display:none"></div>
-
-        <!-- 収入区分別 -->
+        <!-- 収入区分別（折りたたみ） -->
         <div class="card" id="tax-by-type-card" style="display:none">
-          <div id="tax-by-type"></div>
-        </div>
-
-        <!-- 支出の節税効果 -->
-        <div class="card" id="expense-impact-card" style="display:none">
-          <p class="card-desc" id="expense-impact-desc"></p>
-          <div id="expense-impact"></div>
+          <div class="card-fold-head" id="fold-by-type-head">
+            <span>収入区分と課税方式</span>
+            <span class="fold-toggle">›</span>
+          </div>
+          <div class="card-fold-body" id="fold-by-type-body" style="display:none">
+            <div id="tax-by-type"></div>
+          </div>
         </div>
 
         <!-- 支出内訳 -->
@@ -236,26 +241,41 @@
           <div id="analytics-content"></div>
         </div>
 
-        <!-- 控除の管理 -->
+        <!-- 控除の管理（折りたたみ） -->
         <div class="card">
-          <h3 class="card-title">控除</h3>
-          <div id="deduction-list"></div>
-          <button class="btn-outline btn-sm" id="btn-add-deduction" style="margin-top:8px">＋ 追加</button>
+          <div class="card-fold-head" id="fold-deduction-head">
+            <span>控除 <span class="fold-count" id="deduction-count"></span></span>
+            <span class="fold-toggle">›</span>
+          </div>
+          <div class="card-fold-body" id="fold-deduction-body" style="display:none">
+            <div id="deduction-list"></div>
+            <button class="btn-outline btn-sm" id="btn-add-deduction" style="margin-top:8px">＋ 追加</button>
+          </div>
         </div>
 
-        <!-- 減価償却 -->
+        <!-- 減価償却（折りたたみ） -->
         <div class="card">
-          <h3 class="card-title">減価償却</h3>
-          <div id="depreciation-list"></div>
-          <button class="btn-outline btn-sm" id="btn-add-depreciation" style="margin-top:8px">＋ 追加</button>
+          <div class="card-fold-head" id="fold-dep-head">
+            <span>減価償却 <span class="fold-count" id="depreciation-count"></span></span>
+            <span class="fold-toggle">›</span>
+          </div>
+          <div class="card-fold-body" id="fold-dep-body" style="display:none">
+            <div id="depreciation-list"></div>
+            <button class="btn-outline btn-sm" id="btn-add-depreciation" style="margin-top:8px">＋ 追加</button>
+          </div>
         </div>
 
         <!-- AI -->
         <div class="card">
-          <h3 class="card-title">AI相談</h3>
-          <button class="btn-primary btn-sm" id="btn-ai-gen">データ生成</button>
-          <textarea id="ai-output" class="ai-textarea" readonly placeholder="「データ生成」を押してください"></textarea>
-          <button class="btn-outline btn-sm" id="btn-ai-copy" style="display:none">コピー</button>
+          <div class="card-fold-head" id="fold-ai-head">
+            <span>AI相談</span>
+            <span class="fold-toggle">›</span>
+          </div>
+          <div class="card-fold-body" id="fold-ai-body" style="display:none">
+            <button class="btn-primary btn-sm" id="btn-ai-gen">データ生成</button>
+            <textarea id="ai-output" class="ai-textarea" readonly placeholder="「データ生成」を押してください"></textarea>
+            <button class="btn-outline btn-sm" id="btn-ai-copy" style="display:none">コピー</button>
+          </div>
         </div>
       </section>
 
@@ -263,9 +283,20 @@
       <section class="view" id="view-settings">
         <div class="view-head"><h1>設定</h1></div>
 
+        <!-- プロフィール（基礎情報） -->
+        <div class="card" id="profile-card">
+          <div class="card-fold-head" id="fold-profile-head">
+            <span>基礎情報（申告書用）</span>
+            <span class="fold-toggle">›</span>
+          </div>
+          <div class="card-fold-body" id="fold-profile-body" style="display:none">
+            <div id="profile-form-area"></div>
+          </div>
+        </div>
+
         <!-- ▼ ユーザー用: データ概要（自分のデータだけ） -->
         <div class="card" id="user-overview">
-          <h3 class="card-title">📊 あなたのデータ</h3>
+          <h3 class="card-title">あなたのデータ</h3>
           <div id="user-overview-loading" class="overview-loading"><div class="spinner"></div></div>
           <div id="user-overview-content" style="display:none"></div>
         </div>
@@ -469,7 +500,7 @@
         <div class="fg"><label>日付</label><input type="date" id="inc-date" class="fi" required></div>
         <div class="fg"><label>金額</label><div class="fi-amt"><span>¥</span><input type="number" id="inc-amount" class="fi" placeholder="0" inputmode="numeric" required></div></div>
         <div class="fg"><label>入金方法</label><select id="inc-type" class="fi"><option value="振込">振込</option><option value="現金">現金</option><option value="その他">その他</option></select></div>
-        <div class="fg"><label>所得区分</label><select id="inc-income-type" class="fi"><option value="business">事業所得</option><option value="salary">給与所得</option><option value="fx_stock">株・FX（分離課税）</option><option value="real_estate">不動産所得</option><option value="misc">その他</option></select></div>
+        <div class="fg"><label>所得区分</label><div class="hcat-selector" id="inc-income-type-wrap"></div></div>
         <div class="fg"><label>消費税区分</label><select id="inc-taxable" class="fi"><option value="1">課税売上（通常）</option><option value="0">非課税売上（輸出・土地・医療等）</option></select></div>
         <div class="fg"><label>摘要</label><input type="text" id="inc-desc" class="fi" placeholder="例: ○○株式会社 報酬"></div>
         <button type="submit" class="btn-save btn-full">保存</button>
@@ -507,7 +538,7 @@
         <div class="fg"><label>日付</label><input type="date" id="edit-date" class="fi" required></div>
         <div class="fg"><label>金額</label><div class="fi-amt"><span>¥</span><input type="number" id="edit-amount" class="fi" required></div></div>
         <div class="fg" id="edit-cat-group" style="display:none"><label>科目</label><select id="edit-category" class="fi"></select></div>
-        <div class="fg" id="edit-income-type-group" style="display:none"><label>所得区分</label><select id="edit-income-type" class="fi"><option value="business">事業所得</option><option value="salary">給与所得</option><option value="fx_stock">株・FX（分離課税）</option><option value="real_estate">不動産所得</option><option value="misc">その他</option></select></div>
+        <div class="fg" id="edit-income-type-group" style="display:none"><label>所得区分</label><div class="hcat-selector" id="edit-income-type-wrap"></div></div>
         <div class="fg"><label>摘要</label><input type="text" id="edit-desc" class="fi"></div>
         <div class="modal-btns"><button type="button" class="btn-danger" id="btn-edit-delete">削除</button><button type="submit" class="btn-save">保存</button></div>
       </form>
@@ -641,6 +672,18 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260219b"></script>
+  <!-- オンボーディング -->
+  <div class="overlay" id="overlay-onboarding" style="display:none">
+    <div class="modal-sheet onboarding-sheet">
+      <div class="ob-progress"><div class="ob-progress-fill" id="ob-progress-fill"></div></div>
+      <div id="ob-content"></div>
+      <div class="ob-actions">
+        <button class="btn-outline btn-sm" id="ob-skip">スキップ</button>
+        <button class="btn-save btn-sm" id="ob-next">次へ</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js?v=20260222"></script>
 </body>
 </html>

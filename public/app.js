@@ -14,41 +14,78 @@ const App = {
   reportChart: null,
   editingItem: null,
 
-  categories: [
-    { id: 'cogs', name: '仕入・原価', icon: '📦', taxAttr: 'expense', desc: '商品・材料の仕入れ費用' },
-    { id: 'labor', name: '外注・人件費', icon: '🤝', taxAttr: 'expense', desc: '外注費・業務委託・給与' },
-    { id: 'rent', name: '家賃・光熱費', icon: '🏠', taxAttr: 'expense', desc: '事務所家賃・光熱費（按分可）' },
-    { id: 'general', name: '一般経費', icon: '📋', taxAttr: 'expense', desc: '交通・通信・備品・広告など' },
-    { id: 'entertainment', name: '接待交際費', icon: '🍽', taxAttr: 'expense', desc: '取引先との飲食・接待' },
-    { id: 'insurance', name: '保険・年金（個人）', icon: '🛡', taxAttr: 'deduction', desc: '国保・国民年金→所得控除対象' },
-    { id: 'welfare', name: '福利厚生費（法人）', icon: '🎁', taxAttr: 'expense', desc: '法人の社員厚生・社内行事' },
-    { id: 'medical', name: '医療費', icon: '🏥', taxAttr: 'deduction', desc: '医療費控除の対象' },
-    { id: 'tax_deductible', name: '租税公課', icon: '🏛', taxAttr: 'expense', desc: '消費税・印紙税・固定資産税等' },
-    { id: 'tax_non_deductible', name: '税金(非経費)', icon: '📋', taxAttr: 'non_deductible', desc: '所得税・住民税→経費算入不可' },
-    { id: 'asset', name: '固定資産', icon: '💻', taxAttr: 'asset', desc: '10万円以上の設備→減価償却' },
+  // ===== 階層型支出カテゴリ =====
+  expenseGroups: [
+    { id: 'business', label: '事業経費', icon: '💼', items: [
+      { id: 'cogs', name: '仕入・原価', icon: '📦', desc: '商品・材料の仕入れ' },
+      { id: 'labor', name: '外注・人件費', icon: '🤝', desc: '外注・業務委託・給与' },
+      { id: 'rent', name: '事務所・家賃', icon: '🏠', desc: '家賃・光熱費・通信費' },
+      { id: 'general', name: '一般経費', icon: '📋', desc: '交通・広告・消耗品等' },
+      { id: 'entertainment', name: '接待交際費', icon: '🍽', desc: '取引先との飲食' },
+    ]},
+    { id: 'deduction', label: '控除につながる支出', icon: '🛡', items: [
+      { id: 'insurance', name: '社会保険・年金', icon: '🛡', desc: '全額が所得控除' },
+      { id: 'life_insurance', name: '生命保険', icon: '💚', desc: '生命保険料控除' },
+      { id: 'earthquake_insurance', name: '地震保険', icon: '🏔', desc: '地震保険料控除' },
+      { id: 'medical', name: '医療費', icon: '🏥', desc: '10万円超で医療費控除' },
+      { id: 'donation', name: '寄附金', icon: '🎁', desc: 'ふるさと納税等' },
+    ]},
+    { id: 'tax', label: '税金', icon: '🏛', items: [
+      { id: 'tax_deductible', name: '租税公課', icon: '🏛', desc: '事業税・固定資産税等' },
+      { id: 'tax_non_deductible', name: '所得税・住民税', icon: '📋', desc: '経費にならない税金' },
+    ]},
+    { id: 'asset_grp', label: '固定資産', icon: '💻', items: [
+      { id: 'asset', name: '設備・備品', icon: '💻', desc: '10万円超で減価償却' },
+    ]},
   ],
+  // 全カテゴリをフラット化
+  get categories() {
+    const flat = [];
+    for (const g of this.expenseGroups) for (const item of g.items) flat.push(item);
+    return flat;
+  },
   isTaxProfit(cat) { return cat === 'tax_non_deductible'; },
+  categoryName(id) { const c = this.categories.find(c => c.id === id); return c ? c.name : id; },
+  categoryIcon(id) { const c = this.categories.find(c => c.id === id); return c ? c.icon : '📌'; },
 
-  categoryName(id) {
-    const c = this.categories.find(c => c.id === id);
-    return c ? c.name : id;
+  // ===== 階層型収入タイプ =====
+  incomeGroups: [
+    { id: 'main', label: 'よく使う', icon: '⭐', items: [
+      { id: 'business', name: '売上（営業）', icon: '💼', desc: '事業の売上' },
+      { id: 'salary', name: '給与', icon: '🏢', desc: '給与・賞与' },
+      { id: 'real_estate', name: '不動産', icon: '🏠', desc: '家賃収入等' },
+    ]},
+    { id: 'financial', label: '金融・投資', icon: '📈', items: [
+      { id: 'dividend', name: '配当', icon: '📊', desc: '株式配当金' },
+      { id: 'stock_transfer', name: '株式売却', icon: '📈', desc: '株式等の譲渡' },
+      { id: 'fx_stock', name: 'FX・先物', icon: '💱', desc: 'FX・先物取引' },
+      { id: 'interest', name: '利子', icon: '🏦', desc: '預貯金の利子' },
+    ]},
+    { id: 'pension_other', label: '年金・一時・その他', icon: '📋', items: [
+      { id: 'pension', name: '公的年金', icon: '👴', desc: '公的年金等' },
+      { id: 'temporary', name: '一時所得', icon: '🎯', desc: '保険満期金等' },
+      { id: 'subsidy', name: '助成金・補助金', icon: '🏛', desc: '国・自治体の助成金' },
+      { id: 'refund', name: '還付金', icon: '💰', desc: '税金の還付等' },
+      { id: 'misc_other', name: 'その他', icon: '📌', desc: 'その他の所得' },
+    ]},
+    { id: 'special', label: '特殊な所得', icon: '📑', collapsed: true, items: [
+      { id: 'agriculture', name: '農業', icon: '🌾', desc: '農業所得' },
+      { id: 'capital_short', name: '譲渡（短期）', icon: '⏱', desc: '5年以内の資産譲渡' },
+      { id: 'capital_long', name: '譲渡（長期）', icon: '📅', desc: '5年超の資産譲渡' },
+      { id: 'misc_business', name: '雑所得（業務）', icon: '💻', desc: '副業収入等' },
+      { id: 'forest', name: '山林所得', icon: '🌲', desc: '山林の譲渡・伐採' },
+      { id: 'retirement', name: '退職所得', icon: '🎓', desc: '退職金等' },
+    ]},
+  ],
+  get incomeTypes() {
+    const map = {};
+    for (const g of this.incomeGroups) for (const item of g.items) map[item.id] = item;
+    return map;
   },
-  categoryIcon(id) {
-    const c = this.categories.find(c => c.id === id);
-    return c ? c.icon : '📌';
-  },
+  incomeTypeName(id) { return (this.incomeTypes[id] || { name: id }).name; },
+  incomeTypeIcon(id) { return (this.incomeTypes[id] || { icon: '📌' }).icon; },
 
-  incomeTypes: {
-    business: { name: '売上', icon: '💼' },
-    salary: { name: '給与所得', icon: '🏢' },
-    fx_stock: { name: '株・FX', icon: '📈' },
-    real_estate: { name: '不動産所得', icon: '🏠' },
-    subsidy: { name: '助成金・補助金', icon: '🏛' },
-    refund: { name: '還付金', icon: '💰' },
-    misc: { name: 'その他', icon: '📌' }
-  },
-  incomeTypeName(id) { return (this.incomeTypes[id] || this.incomeTypes.business).name; },
-  incomeTypeIcon(id) { return (this.incomeTypes[id] || this.incomeTypes.business).icon; },
+  profile: null,
 
   // ========================================
   // 初期化
@@ -58,8 +95,10 @@ const App = {
       const res = await this.api('/api/auth/me');
       this.user = res.user;
       this.books = res.books;
+      this.profile = res.profile || null;
       this.currentBook = this.books[0] || null;
       this.showApp();
+      if (!this.profile?.onboarding_done) this.startOnboarding();
     } catch {
       this.showAuth();
     }
@@ -71,6 +110,7 @@ const App = {
     this.setupModals();
     this.setupCSV();
     this.setupHistory();
+    this.setupFoldToggles();
     this.initGoogleSignIn();
   },
 
@@ -99,6 +139,202 @@ const App = {
     t.textContent = msg;
     c.appendChild(t);
     setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 300); }, 2500);
+  },
+
+  // ========================================
+  // 折りたたみトグル
+  // ========================================
+  setupFoldToggles() {
+    document.querySelectorAll('.card-fold-head').forEach(head => {
+      head.addEventListener('click', () => {
+        const body = head.nextElementSibling;
+        if (!body) return;
+        const isOpen = body.style.display !== 'none';
+        body.style.display = isOpen ? 'none' : '';
+        const toggle = head.querySelector('.fold-toggle');
+        if (toggle) toggle.textContent = isOpen ? '›' : '⌄';
+      });
+    });
+  },
+
+  // ========================================
+  // 階層カテゴリ描画
+  // ========================================
+  renderHierarchicalCategories(containerId, groups, selectedId, onSelect) {
+    const wrap = typeof containerId === 'string' ? qs(`#${containerId}`) : containerId;
+    if (!wrap) return;
+    wrap.innerHTML = groups.map(g => {
+      const isCollapsed = g.collapsed;
+      return `<div class="hcat-group${isCollapsed ? ' hcat-collapsed' : ''}">
+        <div class="hcat-group-head" data-gid="${g.id}">
+          <span class="hcat-group-icon">${g.icon}</span>
+          <span class="hcat-group-label">${g.label}</span>
+          <span class="hcat-group-arrow">${isCollapsed ? '＋' : ''}</span>
+        </div>
+        <div class="hcat-items"${isCollapsed ? ' style="display:none"' : ''}>
+          ${g.items.map(item => `<div class="hcat-item${item.id === selectedId ? ' selected' : ''}" data-id="${item.id}">
+            <span class="hcat-item-icon">${item.icon}</span>
+            <span class="hcat-item-name">${item.name}</span>
+          </div>`).join('')}
+        </div>
+      </div>`;
+    }).join('');
+    wrap.querySelectorAll('.hcat-group-head').forEach(h => {
+      h.addEventListener('click', () => {
+        const items = h.nextElementSibling;
+        const arrow = h.querySelector('.hcat-group-arrow');
+        if (!items) return;
+        const open = items.style.display !== 'none';
+        items.style.display = open ? 'none' : '';
+        if (arrow) arrow.textContent = open ? '＋' : '';
+      });
+    });
+    wrap.querySelectorAll('.hcat-item').forEach(el => {
+      el.addEventListener('click', () => {
+        wrap.querySelectorAll('.hcat-item').forEach(e => e.classList.remove('selected'));
+        el.classList.add('selected');
+        if (onSelect) onSelect(el.dataset.id);
+      });
+    });
+  },
+
+  // ========================================
+  // オンボーディング
+  // ========================================
+  obStep: 0,
+  obData: {},
+  startOnboarding() {
+    this.obStep = 0;
+    this.obData = { full_name: this.user?.name || '' };
+    this.openOverlay('onboarding');
+    this.renderOnboardingStep();
+  },
+  renderOnboardingStep() {
+    const steps = [
+      { title: 'お名前', field: 'full_name', type: 'text', placeholder: '例: 橋本 太郎', value: this.obData.full_name || '' },
+      { title: '生年月日', field: 'birth_date', type: 'date', value: this.obData.birth_date || '' },
+      { title: '確定申告の種類', field: 'filing_type', type: 'select', options: [
+        { value: 'white', label: '白色申告' },
+        { value: 'blue', label: '青色申告' },
+      ], value: this.obData.filing_type || 'white' },
+      { title: '主な収入源', field: 'main_income', type: 'chips', options: [
+        { value: 'business', label: '💼 事業', selected: true },
+        { value: 'salary', label: '🏢 給与' },
+        { value: 'real_estate', label: '🏠 不動産' },
+        { value: 'financial', label: '📈 金融・投資' },
+        { value: 'pension', label: '👴 年金' },
+      ]},
+    ];
+    const total = steps.length;
+    const step = steps[this.obStep] || steps[total - 1];
+    const pct = Math.round(((this.obStep + 1) / total) * 100);
+    qs('#ob-progress-fill').style.width = pct + '%';
+    const content = qs('#ob-content');
+    let html = `<h2 class="ob-title">${step.title}</h2>`;
+    if (step.type === 'text') {
+      html += `<input type="text" class="fi ob-input" id="ob-field" value="${this.esc(step.value)}" placeholder="${step.placeholder || ''}">`;
+    } else if (step.type === 'date') {
+      html += `<input type="date" class="fi ob-input" id="ob-field" value="${step.value}">`;
+    } else if (step.type === 'select') {
+      html += `<div class="ob-options">${step.options.map(o => `<button class="ob-option${o.value === step.value ? ' selected' : ''}" data-val="${o.value}">${o.label}</button>`).join('')}</div>`;
+    } else if (step.type === 'chips') {
+      html += `<div class="ob-chips">${step.options.map(o => `<button class="ob-chip${o.selected ? ' selected' : ''}" data-val="${o.value}">${o.label}</button>`).join('')}</div>`;
+    }
+    content.innerHTML = html;
+    if (step.type === 'select') {
+      content.querySelectorAll('.ob-option').forEach(btn => {
+        btn.addEventListener('click', () => {
+          content.querySelectorAll('.ob-option').forEach(b => b.classList.remove('selected'));
+          btn.classList.add('selected');
+          this.obData[step.field] = btn.dataset.val;
+        });
+      });
+    }
+    if (step.type === 'chips') {
+      content.querySelectorAll('.ob-chip').forEach(btn => {
+        btn.addEventListener('click', () => btn.classList.toggle('selected'));
+      });
+    }
+    qs('#ob-next').textContent = this.obStep >= total - 1 ? '完了' : '次へ';
+    qs('#ob-next').onclick = () => this.nextOnboardingStep(step);
+    qs('#ob-skip').onclick = () => this.finishOnboarding();
+  },
+  nextOnboardingStep(step) {
+    if (step.type === 'text' || step.type === 'date') {
+      const val = qs('#ob-field')?.value || '';
+      this.obData[step.field] = val;
+    }
+    const totalSteps = 4;
+    if (this.obStep >= totalSteps - 1) {
+      this.finishOnboarding();
+    } else {
+      this.obStep++;
+      this.renderOnboardingStep();
+    }
+  },
+  async finishOnboarding() {
+    this.closeOverlay('onboarding');
+    try {
+      const body = { ...this.obData, onboarding_done: 1 };
+      const res = await this.api('/api/profile', { method: 'PUT', body: JSON.stringify(body) });
+      this.profile = res.profile;
+      this.toast('基礎情報を保存しました', 'success');
+    } catch { /* ignore */ }
+  },
+
+  // ========================================
+  // プロフィールフォーム（設定内）
+  // ========================================
+  renderProfileForm() {
+    const area = qs('#profile-form-area');
+    if (!area) return;
+    const p = this.profile || {};
+    area.innerHTML = `
+      <div class="pf-grid">
+        <div class="fg"><label>氏名</label><input type="text" class="fi" id="pf-name" value="${this.esc(p.full_name || '')}"></div>
+        <div class="fg"><label>氏名（カナ）</label><input type="text" class="fi" id="pf-kana" value="${this.esc(p.full_name_kana || '')}"></div>
+        <div class="fg"><label>生年月日</label><input type="date" class="fi" id="pf-birth" value="${p.birth_date || ''}"></div>
+        <div class="fg"><label>住所</label><input type="text" class="fi" id="pf-address" value="${this.esc(p.address || '')}"></div>
+        <div class="fg"><label>電話番号</label><input type="tel" class="fi" id="pf-phone" value="${this.esc(p.phone || '')}"></div>
+        <div class="fg"><label>職業</label><input type="text" class="fi" id="pf-occupation" value="${this.esc(p.occupation || '')}"></div>
+        <div class="fg"><label>確定申告</label>
+          <select class="fi" id="pf-filing">${['white','blue'].map(v => `<option value="${v}"${p.filing_type === v ? ' selected' : ''}>${v === 'blue' ? '青色申告' : '白色申告'}</option>`).join('')}</select>
+        </div>
+        <div class="fg" id="pf-blue-group" style="${p.filing_type === 'blue' ? '' : 'display:none'}"><label>青色控除額</label>
+          <select class="fi" id="pf-blue-type">${['10','55','65'].map(v => `<option value="${v}"${p.blue_return_type === v ? ' selected' : ''}>${v}万円</option>`).join('')}</select>
+        </div>
+        <div class="fg"><label>配偶者</label>
+          <select class="fi" id="pf-spouse">${['none','dependent','working'].map(v => `<option value="${v}"${p.spouse_status === v ? ' selected' : ''}>${v === 'none' ? 'なし' : v === 'dependent' ? 'あり（扶養）' : 'あり（収入あり）'}</option>`).join('')}</select>
+        </div>
+        <div class="fg"><label>扶養親族（一般）</label><input type="number" class="fi" id="pf-dep-gen" value="${p.dependents_general || 0}" min="0"></div>
+        <div class="fg"><label>扶養親族（特定）</label><input type="number" class="fi" id="pf-dep-spec" value="${p.dependents_specific || 0}" min="0"></div>
+        <div class="fg"><label>40歳以上</label>
+          <select class="fi" id="pf-over40"><option value="0"${!p.over40 ? ' selected' : ''}>いいえ</option><option value="1"${p.over40 ? ' selected' : ''}>はい</option></select>
+        </div>
+      </div>
+      <button class="btn-save btn-full" id="btn-save-profile" style="margin-top:12px">保存</button>
+    `;
+    qs('#pf-filing').addEventListener('change', () => {
+      qs('#pf-blue-group').style.display = qs('#pf-filing').value === 'blue' ? '' : 'none';
+    });
+    qs('#btn-save-profile').addEventListener('click', async () => {
+      const body = {
+        full_name: qs('#pf-name').value, full_name_kana: qs('#pf-kana').value,
+        birth_date: qs('#pf-birth').value, address: qs('#pf-address').value,
+        phone: qs('#pf-phone').value, occupation: qs('#pf-occupation').value,
+        filing_type: qs('#pf-filing').value, blue_return_type: qs('#pf-blue-type')?.value || '10',
+        spouse_status: qs('#pf-spouse').value,
+        dependents_general: parseInt(qs('#pf-dep-gen').value) || 0,
+        dependents_specific: parseInt(qs('#pf-dep-spec').value) || 0,
+        over40: parseInt(qs('#pf-over40').value) || 0,
+        onboarding_done: 1,
+      };
+      try {
+        const res = await this.api('/api/profile', { method: 'PUT', body: JSON.stringify(body) });
+        this.profile = res.profile;
+        this.toast('保存しました', 'success');
+      } catch (err) { this.toast(err.message, 'error'); }
+    });
   },
 
   // ========================================
@@ -559,15 +795,8 @@ const App = {
 
     const grid = qs('#cf-cats');
     const suggested = this.suggestCategory(extracted.description);
-    grid.innerHTML = this.categories.map(c =>
-      `<button type="button" class="cf-chip${c.id===suggested?' active':''}" data-cat="${c.id}">${c.icon} ${c.name}</button>`
-    ).join('');
-    grid.querySelectorAll('.cf-chip').forEach(ch => {
-      ch.addEventListener('click', () => {
-        grid.querySelectorAll('.cf-chip').forEach(x => x.classList.remove('active'));
-        ch.classList.add('active');
-      });
-    });
+    this._cfSelectedCat = suggested;
+    this.renderHierarchicalCategories(grid, this.expenseGroups, suggested, (id) => { this._cfSelectedCat = id; });
 
     qs('#btn-cf-retake').onclick = () => {
       this.closeOverlay('confirm');
@@ -577,33 +806,31 @@ const App = {
   },
 
   suggestCategory(desc, amount) {
-    if (!desc) return 'misc';
+    if (!desc) return 'general';
     const d = desc.toLowerCase();
     const map = {
       medical: ['病院','医院','クリニック','歯科','薬局','薬店','ドラッグ','調剤','診療','処方','眼科','皮膚科','内科','外科','整骨','接骨','治療','健診','人間ドック','医療'],
-      insurance: ['保険','生命保険','損害保険','健康保険','国民健康','年金','共済','社会保険'],
-      travel: ['交通','電車','JR','suica','タクシー','バス','新幹線','高速','ETC','ガソリン','駐車'],
-      communication: ['通信','携帯','ソフトバンク','au','docomo','AWS','サーバー','Zoom'],
-      supplies: ['Amazon','アマゾン','ヨドバシ','文具','コピー','100均','ダイソー','消耗品'],
-      advertising: ['広告','Google','宣伝','チラシ'],
+      insurance: ['国民年金','国保','社会保険','国民健康保険','健康保険','年金','共済'],
+      life_insurance: ['生命保険','損害保険','がん保険','養老保険','介護保険','学資保険','個人年金保険'],
+      earthquake_insurance: ['地震保険','火災保険'],
+      donation: ['寄附','寄付','ふるさと納税','赤十字','ユニセフ'],
       entertainment: ['飲食','居酒屋','レストラン','食事','ランチ','カフェ','スタバ','マクドナルド','コンビニ','セブン','ローソン','ファミマ','弁当'],
-      outsourcing: ['外注','業務委託','ランサーズ','クラウドワークス'],
-      fees: ['手数料','PayPal','Stripe','振込','ATM'],
-      home_office: ['電気','ガス','水道','家賃'],
-      depreciation: ['パソコン','PC','Mac','iPhone','iPad','カメラ','モニター','プリンター'],
-      tax_cost: ['消費税','印紙税','事業税','固定資産税','自動車税','収入印紙','都市計画税'],
-      tax_profit: ['所得税','住民税','法人税','予定納税','源泉所得税','確定申告']
+      labor: ['外注','業務委託','ランサーズ','クラウドワークス','給与','報酬'],
+      rent: ['電気','ガス','水道','家賃','光熱','賃料'],
+      asset: ['パソコン','PC','Mac','iPhone','iPad','カメラ','モニター','プリンター'],
+      tax_deductible: ['消費税','印紙税','事業税','固定資産税','自動車税','収入印紙','都市計画税'],
+      tax_non_deductible: ['所得税','住民税','法人税','予定納税','源泉所得税','確定申告'],
+      general: ['交通','電車','JR','suica','タクシー','バス','新幹線','高速','ETC','ガソリン','駐車','通信','携帯','AWS','サーバー','Amazon','アマゾン','ヨドバシ','文具','コピー','消耗品','広告','宣伝','手数料','PayPal','Stripe','振込','ATM'],
     };
     for (const [cat, kws] of Object.entries(map)) {
       for (const kw of kws) { if (d.includes(kw.toLowerCase())) return cat; }
     }
-    // 金額ベース: 10万円以上の購入は減価償却候補
-    if (amount && amount >= 100000) return 'depreciation';
-    return 'misc';
+    if (amount && amount >= 100000) return 'asset';
+    return 'general';
   },
 
   async saveFromConfirm() {
-    const catEl = qs('#cf-cats .cf-chip.active');
+    const catEl = this._cfSelectedCat;
     if (!catEl) { this.toast('科目を選択してください', 'error'); return; }
     const btn = qs('#btn-cf-save');
     btn.disabled = true; btn.textContent = '保存中...';
@@ -612,7 +839,7 @@ const App = {
     fd.append('bookId', this.currentBook.id);
     fd.append('date', qs('#cf-date').value);
     fd.append('amount', qs('#cf-amount').value);
-    fd.append('category', catEl.dataset.cat);
+    fd.append('category', catEl);
     fd.append('description', qs('#cf-desc').value);
     fd.append('source', 'ocr');
     if (this.receiptFile) fd.append('receipt', this.receiptFile);
@@ -620,7 +847,7 @@ const App = {
     try {
       await fetch(BASE + '/api/expense', { method: 'POST', body: fd, credentials: 'same-origin' });
       this.closeOverlay('confirm');
-      this.showSuccess(qs('#cf-amount').value, qs('#cf-desc').value, this.categoryName(catEl.dataset.cat), catEl.dataset.cat);
+      this.showSuccess(qs('#cf-amount').value, qs('#cf-desc').value, this.categoryName(catEl), catEl);
       this.loadDashboard();
     } catch (err) { this.toast(err.message, 'error'); }
     btn.disabled = false; btn.textContent = '保存する';
@@ -1201,40 +1428,42 @@ const App = {
 
   renderPaymentSchedule(schedule) {
     const wrap = qs('#payment-schedule');
+    const wrapAll = qs('#payment-schedule-all');
+    const btnAll = qs('#btn-show-all-schedule');
     if (!wrap || !schedule.length) {
       if (wrap) wrap.innerHTML = '<div style="text-align:center;color:var(--text3);font-size:13px;padding:12px">データを入力すると支払予定が表示されます</div>';
-      const st = qs('#schedule-total');
-      if (st) st.textContent = '';
+      if (wrapAll) wrapAll.style.display = 'none';
+      if (btnAll) btnAll.style.display = 'none';
       return;
     }
-    const total = schedule.reduce((s, p) => s + (p.amount || 0), 0);
-    const st = qs('#schedule-total');
-    if (st) st.textContent = `合計 ¥${total.toLocaleString()}`;
+    const now = new Date();
+    const upcoming = schedule.filter(p => new Date(p.date) >= now).sort((a, b) => a.date.localeCompare(b.date));
+    const preview = upcoming.slice(0, 3);
+    const rest = upcoming.slice(3);
 
-    const grouped = {};
-    schedule.forEach(p => {
-      const d = p.date || '';
-      const ym = d.slice(0, 7);
-      if (!grouped[ym]) grouped[ym] = [];
-      grouped[ym].push(p);
-    });
+    const renderItems = (items) => items.map(p => `<div class="pt-item">
+      <div class="pt-item-left">
+        <span class="pt-item-icon">${p.icon || '📋'}</span>
+        <span class="pt-item-label">${p.label}</span>
+        <span class="pt-item-date">${(p.date || '').slice(5)}</span>
+      </div>
+      <span class="pt-item-amount">¥${(p.amount || 0).toLocaleString()}</span>
+    </div>`).join('');
 
-    const months = ['', '1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
-    wrap.innerHTML = Object.entries(grouped).map(([ym, items]) => {
-      const m = parseInt(ym.slice(5));
-      const yr = ym.slice(0, 4);
-      return `<div class="pt-month-group">
-        <div class="pt-month-label">${yr}年${months[m] || (m + '月')}</div>
-        ${items.map(p => `<div class="pt-item" data-cat="${p.cat}">
-          <div class="pt-item-left">
-            <span class="pt-item-icon">${p.icon || '📋'}</span>
-            <span class="pt-item-label">${p.label}</span>
-            <span class="pt-item-date">${p.date.slice(5)}</span>
-          </div>
-          <span class="pt-item-amount">¥${(p.amount || 0).toLocaleString()}</span>
-        </div>`).join('')}
-      </div>`;
-    }).join('');
+    wrap.innerHTML = preview.length ? renderItems(preview) : '<div style="text-align:center;color:var(--text3);padding:8px">直近の予定なし</div>';
+
+    if (rest.length && btnAll && wrapAll) {
+      btnAll.style.display = '';
+      wrapAll.innerHTML = renderItems(rest);
+      btnAll.onclick = () => {
+        const open = wrapAll.style.display !== 'none';
+        wrapAll.style.display = open ? 'none' : '';
+        btnAll.textContent = open ? 'すべて見る' : '閉じる';
+      };
+    } else {
+      if (btnAll) btnAll.style.display = 'none';
+      if (wrapAll) wrapAll.style.display = 'none';
+    }
   },
 
   renderDeductions(deductions, year) {
@@ -1905,6 +2134,7 @@ const App = {
   // 設定
   // ========================================
   setupSettings() {
+    this.renderProfileForm();
     qs('#btn-add-book').addEventListener('click', () => this.openOverlay('add-book'));
     qs('#btn-logout').addEventListener('click', () => this.logout());
     qs('#btn-backup').addEventListener('click', () => {
@@ -2295,9 +2525,12 @@ const App = {
   // ========================================
   // モーダル群
   // ========================================
+  _incSelectedType: 'business',
   setupModals() {
     // 収入モーダル
     qs('#close-income').addEventListener('click', () => this.closeOverlay('income'));
+    this._incSelectedType = 'business';
+    this.renderHierarchicalCategories('inc-income-type-wrap', this.incomeGroups, 'business', (id) => { this._incSelectedType = id; });
     qs('#form-income').addEventListener('submit', async (e) => {
       e.preventDefault();
       try {
@@ -2308,7 +2541,7 @@ const App = {
             date: qs('#inc-date').value,
             amount: qs('#inc-amount').value,
             type: qs('#inc-type').value,
-            income_type: qs('#inc-income-type').value,
+            income_type: this._incSelectedType,
             description: qs('#inc-desc').value,
             taxable: parseInt(qs('#inc-taxable')?.value ?? '1')
           })
@@ -2325,8 +2558,7 @@ const App = {
     this.buildCatChips('me-cats');
     qs('#form-manual-expense').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const catEl = qs('#me-cats .cat-chip.active');
-      if (!catEl) { this.toast('科目を選択してください', 'error'); return; }
+      if (!this._meSelectedCat) { this.toast('科目を選択してください', 'error'); return; }
       try {
         await this.api('/api/expense', {
           method: 'POST',
@@ -2335,13 +2567,14 @@ const App = {
             bookId: this.currentBook.id,
             date: qs('#me-date').value,
             amount: qs('#me-amount').value,
-            category: catEl.dataset.cat,
+            category: this._meSelectedCat,
             description: qs('#me-desc').value
           })
         });
         this.closeOverlay('manual');
         qs('#form-manual-expense').reset();
-        qs('#me-cats').querySelectorAll('.cat-chip').forEach(c => c.classList.remove('active'));
+        this._meSelectedCat = null;
+        qs('#me-cats').querySelectorAll('.hcat-item').forEach(c => c.classList.remove('selected'));
         this.toast('支出を記録しました', 'success');
         this.loadDashboard();
       } catch (err) { this.toast(err.message, 'error'); }
@@ -2361,7 +2594,7 @@ const App = {
         description: qs('#edit-desc').value
       };
       if (kind === 'expense') body.category = qs('#edit-category').value;
-      else { body.type = '振込'; body.income_type = qs('#edit-income-type').value; }
+      else { body.type = '振込'; body.income_type = this._editSelectedIncType || 'business'; }
       try {
         await this.api(url, { method: 'PUT', body: JSON.stringify(body) });
         this.closeOverlay('edit');
@@ -2400,17 +2633,10 @@ const App = {
     if (qs('#me-date')) qs('#me-date').value = today;
   },
 
+  _meSelectedCat: null,
   buildCatChips(containerId) {
-    const grid = qs(`#${containerId}`);
-    grid.innerHTML = this.categories.map(c =>
-      `<button type="button" class="cat-chip" data-cat="${c.id}">${c.icon} ${c.name}</button>`
-    ).join('');
-    grid.querySelectorAll('.cat-chip').forEach(ch => {
-      ch.addEventListener('click', () => {
-        grid.querySelectorAll('.cat-chip').forEach(x => x.classList.remove('active'));
-        ch.classList.add('active');
-      });
-    });
+    this._meSelectedCat = null;
+    this.renderHierarchicalCategories(containerId, this.expenseGroups, null, (id) => { this._meSelectedCat = id; });
   },
 
   buildCatSelect(selectId) {
@@ -2446,7 +2672,10 @@ const App = {
       qs('#edit-cat-group').style.display = kind === 'expense' ? '' : 'none';
       qs('#edit-income-type-group').style.display = kind === 'income' ? '' : 'none';
       if (kind === 'expense') qs('#edit-category').value = item.category;
-      if (kind === 'income' && item.income_type) qs('#edit-income-type').value = item.income_type;
+      if (kind === 'income') {
+        this._editSelectedIncType = item.income_type || 'business';
+        this.renderHierarchicalCategories('edit-income-type-wrap', this.incomeGroups, this._editSelectedIncType, (id) => { this._editSelectedIncType = id; });
+      }
 
       // 詳細情報エリア表示
       const detailArea = qs('#edit-detail-area');
