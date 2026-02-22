@@ -795,4 +795,9 @@ savings（差額）も返却。
 
 ■対象: server.js, app.js, index.html, style.css, 00_constitution.md
 ■構文チェック: server.js OK / app.js OK
-■結果: 実装完了 / 未デプロイ
+■結果
+完了 / コミット: faf6607 / デプロイ済み
+- HTTP 200 ✅
+- PM2 online ✅
+- キャッシュバスティング: app.js?v=20260222b ✅
+- POST /api/simulation → 401（auth必須で正常）✅
